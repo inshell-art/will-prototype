@@ -53,7 +53,7 @@ At any moment on the demo page:
 - **Mutant tiles** are generated from that parent using the **current waiting row’s** `(G, I)` and the **candidate index** `P`.
   - PRF context for a mutant is: `seed + G + I + candidate + label`.
 
-### 3×3 Tile Map (All Situations)
+### Will-Interaction 3×3 Window (All Situations)
 
 Tile layout (mutant indices are fixed by position):
 
