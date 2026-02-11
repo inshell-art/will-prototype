@@ -43,6 +43,16 @@ Rules used by the demo and map:
 - **Will** applies the pick and appends a new waiting row.
 - **Buy** creates a `Sold` row at `I0` for the new generation and a new waiting row at `I1`.
 
+## Current + Mutants (G‑I‑P Labels)
+
+At any moment on the demo page:
+
+- **Center tile (Current)** = the **last applied pick** row `(G, I, P)`.
+  - `P = Genesis` for the very first parent.
+  - `P = Sold` when a Buy created the new generation parent.
+- **Mutant tiles** are generated from that parent using the **current waiting row’s** `(G, I)` and the **candidate index** `P`.
+  - PRF context for a mutant is: `seed + G + I + candidate + label`.
+
 ## Trace JSON Format
 
 Exported JSON looks like:
@@ -77,6 +87,9 @@ Multiple branches can be exported as:
 }
 ```
 
+**Fork branches JSON format:** `groups` is an array of independent traces.  
+Each group is what you see in one branch panel of the demo UI.
+
 ## Controls
 
 ### Demo
@@ -100,17 +113,27 @@ Keyboard:
 - **Import Trace JSON** to visualize a trace file.
 - Hover a node to see the zoomed preview.
 
-## Structural Mutation Types
+## Mutant Probability Design
 
-When a structural mutation occurs (`structProb`), exactly one of these happens:
+Each mutant is produced in two stages:
 
-- **Shift row/column** (50% of structural events)
-- **Swap two cells** (25%)
-- **Duplicate one cell into another** (25%)
+1. **Per‑cell mutation**
+   - Each cell mutates with probability  
+     `pCell = clamp(0.18 + 1.3*sigma, 0.06, 0.95)`
+   - If it mutates, H/S/L deltas are uniform in a ± range:
+     - `dh = uniform(-1, 1) * sigma * 0.45`
+     - `ds = uniform(-1, 1) * sigma * 0.35`
+     - `dl = uniform(-1, 1) * sigma * 0.35`
+
+2. **Structural mutation (optional, once per genome)**
+   - Happens with probability `structProb`.
+   - If it happens, exactly one of these occurs:
+     - **Shift row/column** (50% of structural events)
+     - **Swap two cells** (25%)
+     - **Duplicate one cell into another** (25%)
 
 ## Notes / Limitations
 
 - `sigma` is locked once Init Color is set, to keep a trace consistent.
 - If the map cannot access localStorage (e.g. file:// isolation), it will request the trace directly from the demo page using `postMessage`.
 - Both pages must be in the same folder for the direct request to work.
-
