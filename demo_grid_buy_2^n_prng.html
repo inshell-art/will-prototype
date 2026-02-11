@@ -822,6 +822,7 @@
   let candidateOffset = 0;
   let traceGroups = [];
   let activeGroupIndex = 0;
+  let appliedGroupIndex = 0;
   let selectedIndex = null; // 0..8
   let gridN = parseInt(gridNEl.value, 10);   // N for NxN
   let sigma = parseFloat(sigmaEl.value);
@@ -848,6 +849,7 @@
       candidateOffset,
       traceGroups,
       activeGroupIndex,
+      appliedGroupIndex,
       population: population.map(p => ({seed: p.seed, genome: Array.from(p.genome)})),
     };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
@@ -870,6 +872,7 @@
       candidateOffset = obj.candidateOffset ?? 0;
       traceGroups = Array.isArray(obj.traceGroups) ? obj.traceGroups : [];
       activeGroupIndex = obj.activeGroupIndex ?? 0;
+      appliedGroupIndex = obj.appliedGroupIndex ?? activeGroupIndex ?? 0;
 
       if (!traceGroups.length) {
         const legacyInit = obj.initialColor ?? "";
@@ -884,6 +887,7 @@
         traceGroups = [{initColor: "", rows: defaultTraceRows(), collapsed: false}];
       }
       activeGroupIndex = Math.max(0, Math.min(activeGroupIndex, traceGroups.length - 1));
+      appliedGroupIndex = Math.max(0, Math.min(appliedGroupIndex, traceGroups.length - 1));
       const activeInit = traceGroups[activeGroupIndex].initColor || "";
       const initValid = parseHexColor(activeInit);
       if (!initValid) {
@@ -1299,6 +1303,7 @@
     traceGroups.forEach((g, i) => {
       const el = createTraceGroupElement(g, i);
       if (i === activeIdx) el.classList.add("active");
+      if (i === appliedGroupIndex) el.classList.add("applied");
       traceGroupsEl.appendChild(el);
     });
     activeGroupIndex = activeIdx;
@@ -1406,6 +1411,11 @@
     }
     traceGroups.splice(idx, 1);
     activeGroupIndex = Math.max(0, Math.min(activeGroupIndex, traceGroups.length - 1));
+    if (appliedGroupIndex === idx) {
+      appliedGroupIndex = activeGroupIndex;
+    } else if (appliedGroupIndex > idx) {
+      appliedGroupIndex -= 1;
+    }
     renderTraceGroups();
     saveState();
     const active = getActiveGroupEl();
@@ -1646,8 +1656,9 @@
       if (didApply && shouldAddRow) addTraceRowToGroup(groupEl);
     }
     if (didApply && groupEl) {
-      groupEl.classList.add("applied");
-      setTimeout(() => groupEl.classList.remove("applied"), 450);
+      appliedGroupIndex = parseInt(groupEl.dataset.index, 10) || 0;
+      renderTraceGroups();
+      saveState();
     }
   }
 
