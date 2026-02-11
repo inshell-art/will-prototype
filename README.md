@@ -214,6 +214,20 @@ Possible outcomes for a given cell position:
 So the per‑cell mutation and the structural mutation are **independent stages**:
 the first changes values, the second can move or overwrite them.
 
+### Independence / Relationship Notes
+
+- The PRF values are **deterministic** for a given `(seed, G, I, candidate, label, cell)`.
+- Different labels (e.g. `mutate-gate`, `mutate-dh`, `struct-op`) are mixed with different hashes,
+  so they behave like **independent draws** even though they are fully deterministic.
+- Per‑cell mutation happens **before** structural mutation.
+- Structural mutation is **one global event** per mutant (not per cell).
+
+### Structural Mutation Impact by Type
+
+- **Shift row/column**: every cell moves to a new position. The values are preserved, but positions change.
+- **Swap**: only two positions change (the chosen pair); all others are unchanged.
+- **Duplicate**: exactly one destination is overwritten by another cell; all other positions remain.
+
 ## Notes / Limitations
 
 - `sigma` is locked once Init Color is set, to keep a trace consistent.
