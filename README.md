@@ -165,20 +165,54 @@ Keyboard:
 
 Each mutant is produced in two stages:
 
-1. **Per‑cell mutation**
-   - Each cell mutates with probability  
-     `pCell = clamp(0.18 + 1.3*sigma, 0.06, 0.95)`
-   - If it mutates, H/S/L deltas are uniform in a ± range:
-     - `dh = uniform(-1, 1) * sigma * 0.45`
-     - `ds = uniform(-1, 1) * sigma * 0.35`
-     - `dl = uniform(-1, 1) * sigma * 0.35`
+1. **Per‑cell mutation (local color change)**
 
-2. **Structural mutation (optional, once per genome)**
-   - Happens with probability `structProb`.
-   - If it happens, exactly one of these occurs:
-     - **Shift row/column** (50% of structural events)
-     - **Swap two cells** (25%)
-     - **Duplicate one cell into another** (25%)
+Each cell draws a PRF value `u = prf("mutate-gate", cell)`.
+If `u < pCell` the cell mutates; otherwise it stays the same.
+
+`pCell` is:
+
+```
+pCell = clamp(0.18 + 1.3 * sigma, 0.06, 0.95)
+```
+
+Meaning:
+
+- `sigma = 0` → `pCell = 0.18` (low mutation rate)
+- `sigma = 0.5` → `pCell = 0.83` (high mutation rate)
+- `sigma = 1` → `pCell = 0.95` (clamped max)
+
+If a cell mutates, H/S/L deltas are uniform in a ± range:
+
+```
+dh = uniform(-1, 1) * sigma * 0.45
+ds = uniform(-1, 1) * sigma * 0.35
+dl = uniform(-1, 1) * sigma * 0.35
+```
+
+2. **Structural mutation (global rearrangement, optional)**
+
+With probability `structProb`, the mutated grid is rearranged **once**:
+
+- **Shift row/column** (50% of structural events)
+- **Swap two cells** (25%)
+- **Duplicate one cell into another** (25%)
+
+### Final Cell Outcome (all possibilities)
+
+A cell’s final color can come from either itself or another cell because
+structural mutation happens **after** per‑cell mutation.
+
+Possible outcomes for a given cell position:
+
+- **Unchanged**: did not mutate, and no structural op moved/copied over it.
+- **Locally mutated**: mutated, and no structural op moved/copied over it.
+- **Replaced by shift**: its final value comes from a neighbor due to row/col shift.
+- **Replaced by swap**: its final value comes from another cell due to swap.
+- **Replaced by duplicate**: its final value is copied from another cell.
+
+So the per‑cell mutation and the structural mutation are **independent stages**:
+the first changes values, the second can move or overwrite them.
 
 ## Notes / Limitations
 
