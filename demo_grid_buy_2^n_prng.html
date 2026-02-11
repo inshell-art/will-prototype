@@ -116,6 +116,11 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      transition: box-shadow .2s ease, border-color .2s ease;
+    }
+    .trace-group.applied .trace-body {
+      box-shadow: 0 0 0 2px rgba(46, 229, 157, .35) inset, 0 0 0 1px rgba(46, 229, 157, .15);
+      border-radius: 10px;
     }
     .trace-group.collapsed .trace-body {
       display: none;
@@ -1639,6 +1644,10 @@
       didApply = true;
     } finally {
       if (didApply && shouldAddRow) addTraceRowToGroup(groupEl);
+    }
+    if (didApply && groupEl) {
+      groupEl.classList.add("applied");
+      setTimeout(() => groupEl.classList.remove("applied"), 450);
     }
   }
 
