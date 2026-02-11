@@ -1,0 +1,1750 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Seeded PRNG Evolutionary Color Grid (No Pretraining)</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #121a27;
+      --panel2: #0f1622;
+      --text: #e8eefc;
+      --muted: #b6c2e2;
+      --accent: #7aa2ff;
+      --bad: #ff6b6b;
+      --good: #2ee59d;
+      --border: rgba(255,255,255,.12);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 20% 0%, #1a2a52 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap {
+      max-width: none;
+      width: 100%;
+      margin: 0;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    header {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px 18px 0 18px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: .2px;
+    }
+    header p {
+      margin: 8px 0 0 0;
+      color: var(--muted);
+      line-height: 1.35;
+      font-size: 14px;
+    }
+    .panel {
+      background: rgba(18, 26, 39, .86);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 16px 60px rgba(0,0,0,.35);
+      backdrop-filter: blur(10px);
+      min-width: 0;
+    }
+    .panel.grid-panel {
+      padding: 0;
+    }
+    .grid-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 980px) {
+      .grid-row {
+        grid-template-columns: 1fr;
+      }
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      width: 100%;
+      min-width: 0;
+    }
+    .tile {
+      background: rgba(15, 22, 34, .8);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px;
+      min-width: 0;
+      cursor: pointer;
+      transition: transform .08s ease, border-color .08s ease, box-shadow .08s ease;
+      position: relative;
+      user-select: none;
+    }
+    .tile:hover { transform: translateY(-2px); border-color: rgba(122,162,255,.5); }
+    .tile.blank { cursor: default; }
+    .tile.blank:hover { transform: none; border-color: var(--border); }
+    .trace-panel label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .trace-group + .trace-group {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .trace-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .trace-body {
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .trace-group.collapsed .trace-body {
+      display: none;
+    }
+    .trace-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      flex-wrap: nowrap;
+    }
+    .trace-row .text-input.small {
+      flex: 1 1 0;
+      min-width: 0;
+      width: auto;
+    }
+    .trace-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .tile.selected {
+      border-color: rgba(46, 229, 157, .8);
+      box-shadow: 0 0 0 2px rgba(46, 229, 157, .16) inset;
+      transform: translateY(-2px);
+    }
+    .badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 12px;
+      color: rgba(255,255,255,.85);
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 4px 8px;
+      border-radius: 999px;
+    }
+    .grid-svg {
+      width: 100%;
+      aspect-ratio: 1/1;
+      border-radius: 10px;
+      background: #0a0f18;
+      display: block;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .controls-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 12px;
+      overflow-x: visible;
+    }
+    .controls-bar .stats {
+      margin-right: auto;
+      white-space: normal;
+      min-width: 0;
+      flex: 1 1 280px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 1 auto;
+    }
+    .controls-bar input[type="range"] {
+      width: 140px;
+    }
+    label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input[type="range"] { width: 100%; }
+    .text-input {
+      width: 140px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(10, 15, 24, .6);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+    .text-input.small {
+      width: 90px;
+    }
+    .mini-btn {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+    .btnbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(10, 15, 24, .7);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: .2px;
+      transition: transform .06s ease, border-color .08s ease, background .08s ease;
+    }
+    button:hover { border-color: rgba(122,162,255,.5); transform: translateY(-1px); }
+    button.primary { background: rgba(122,162,255,.18); border-color: rgba(122,162,255,.5); }
+    button.good { background: rgba(46,229,157,.14); border-color: rgba(46,229,157,.5); }
+    button.danger { background: rgba(255,107,107,.12); border-color: rgba(255,107,107,.45); }
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      border-color: rgba(255,255,255,.12);
+      transform: none;
+    }
+    .stats {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .stats code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      color: rgba(255,255,255,.9);
+    }
+    .small {
+      font-size: 12px;
+      color: rgba(255,255,255,.65);
+      line-height: 1.4;
+    }
+    .footer {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 18px 18px 18px;
+      color: rgba(255,255,255,.55);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: rgba(255,255,255,.85);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Interactive Evolutionary Color Grid (seeded PRNG)</h1>
+    <p>
+      Click a tile you like. Then press <span class="kbd">Will</span> to generate 7 mutated variants of that “genome”.
+      Press <span class="kbd">Buy</span> to <b>refine the grid by splitting each cell into a 2×2 block</b> (N×N → (2N)×(2N), e.g., 1×1 → 2×2 → 4×4 → 8×8 → …) using your current pick as the current selection.
+      Seed controls determinism: same seed + same sequence of actions = same results.
+    </p>
+  </header>
+
+  <div class="wrap">
+    <div class="panel">
+      <div class="controls-bar">
+        <div class="stats">
+          Generation: <code id="gen">0</code> · N: <code id="gridVal">2^0</code> · Iteration: <code id="iter">0</code> · Selected: <code id="sel">—</code>
+        </div>
+        <div class="row">
+          <label for="sigma">Mutation: <code id="sigmaVal">0.12</code></label>
+          <input id="sigma" type="range" min="0.01" max="0.40" step="0.01" value="0.12">
+        </div>
+        <input id="gridN" type="hidden" min="1" max="256" step="1" value="1">
+        <div class="row">
+          <label for="cellStroke">Stroke: <code id="strokeVal">0</code></label>
+          <input id="cellStroke" type="range" min="0" max="0.2" step="0.01" value="0">
+        </div>
+        <div class="row">
+          <label for="structProb">Shift/Swap: <code id="structVal">0.12</code></label>
+          <input id="structProb" type="range" min="0" max="1" step="0.01" value="0.12">
+        </div>
+        <div class="btnbar">
+          <button class="primary" id="evolveBtn">Will</button>
+          <button class="good" id="buyBtn" title="Buy refines by splitting each cell into 2×2: N→2N (only works when Current is selected)">Buy</button>
+          <button id="downloadBtn" title="Download the currently selected tile as SVG">Download</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-row">
+      <div class="panel grid-panel">
+        <div class="grid" id="grid"></div>
+      </div>
+      <div class="panel trace-panel">
+        <div id="traceGroups"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    This page runs fully offline. Open the HTML file locally in any modern browser.
+    It demonstrates how simple human selection can sculpt random noise into personally meaningful patterns — without any pretrained model.
+    Seeded PRNG means the same seed plus the same sequence of actions yields the same results.
+  </div>
+
+<script>
+(() => {
+  // ---------------------------
+  // Utilities
+  // ---------------------------
+  function clamp01(x){ return Math.min(1, Math.max(0, x)); }
+  function wrap01(x){ x = x % 1; return (x < 0) ? x + 1 : x; }
+
+  // Deterministic RNG (Mulberry32)
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function() {
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Gaussian noise (Box-Muller)
+  function gaussian(rng) {
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function hslToRgba(h, s, l, a) {
+    // h,s,l in [0..1]; a in [0..1]
+    h = wrap01(h);
+    const H = h * 360;
+    const S = s * 100;
+    const L = l * 100;
+    return `hsla(${H.toFixed(1)}, ${S.toFixed(1)}%, ${L.toFixed(1)}%, ${a.toFixed(3)})`;
+  }
+
+  function downloadText(filename, text) {
+    const blob = new Blob([text], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function randInt(rng, n) {
+    return Math.floor(rng() * n);
+  }
+
+  function randomSeed32() {
+    if (window.crypto && window.crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      return arr[0] >>> 0;
+    }
+    return (Math.floor(Math.random() * 0x100000000) >>> 0);
+  }
+
+  function formatSeed(seed) {
+    const s = (seed >>> 0).toString(16).padStart(8, "0");
+    return `0x${s}`;
+  }
+
+  function hashString32(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+  }
+
+  function mix32(x) {
+    x = (x + 0x9e3779b9) >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+    return (x ^ (x >>> 16)) >>> 0;
+  }
+
+  function prfUint(ctx, label, a = 0, b = 0, c = 0, d = 0) {
+    let x = (ctx.seed ^ hashString32(label)) >>> 0;
+    x = (x + Math.imul(ctx.gen | 0, 0x9e3779b1)) >>> 0;
+    x = (x + Math.imul(ctx.iter | 0, 0x85ebca6b)) >>> 0;
+    x = (x + Math.imul(ctx.cand | 0, 0xc2b2ae35)) >>> 0;
+    x = (x + Math.imul(a | 0, 0x27d4eb2f)) >>> 0;
+    x = (x + Math.imul(b | 0, 0x165667b1)) >>> 0;
+    x = (x + Math.imul(c | 0, 0xd3a2646c)) >>> 0;
+    x = (x + Math.imul(d | 0, 0xfd7046c5)) >>> 0;
+    return mix32(x);
+  }
+
+  function prfFloat(ctx, label, a = 0, b = 0, c = 0, d = 0) {
+    return prfUint(ctx, label, a, b, c, d) / 4294967296;
+  }
+
+  function prfInt(ctx, label, n, a = 0, b = 0, c = 0, d = 0) {
+    return Math.floor(prfFloat(ctx, label, a, b, c, d) * n);
+  }
+
+  function parseHexColor(text) {
+    const t = String(text || "").trim();
+    const m = /^#?([0-9a-f]{6})$/i.exec(t);
+    if (!m) return null;
+    const hex = m[1];
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+
+  function seedFromColor(rgb) {
+    return ((rgb.r << 16) | (rgb.g << 8) | rgb.b) >>> 0;
+  }
+
+  function colorFromSeed(seed) {
+    const v = seed >>> 0;
+    const hex = (v & 0xFFFFFF).toString(16).padStart(6, "0");
+    return `#${hex}`;
+  }
+
+  function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      switch (max) {
+        case r: h = ((g - b) / d) % 6; break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+      if (h < 0) h += 1;
+    }
+    return {h, s, l};
+  }
+
+  function initialColorToGenome(gridN, hsl) {
+    const g = new Float32Array(genomeLength(gridN));
+    g[0] = wrap01(hsl.h);
+    g[1] = clamp01(hsl.s);
+    g[2] = clamp01(hsl.l);
+    const sRaw = clamp01((hsl.s - 0.30) / 0.70);
+    const lRaw = clamp01((hsl.l - 0.05) / 0.90);
+    let idx = 3;
+    for (let i = 0; i < gridN * gridN; i++) {
+      g[idx++] = wrap01(hsl.h);
+      g[idx++] = sRaw;
+      g[idx++] = lRaw;
+    }
+    return g;
+  }
+
+  // ---------------------------
+  // Genome encoding
+  // ---------------------------
+  // Genome layout:
+  // [bgH, bgS, bgL, then per cell (H,S,L) for gridN*gridN]
+  function genomeLength(gridN) { return 3 + (gridN * gridN * 3); }
+
+  function randomGenome(ctx, gridN) {
+    const g = new Float32Array(genomeLength(gridN));
+    // background (fixed black)
+    g[0] = 0; // bgH
+    g[1] = 0; // bgS
+    g[2] = 0; // bgL
+    let idx = 3;
+    for (let i=0; i<gridN*gridN; i++) {
+      g[idx++] = prfFloat(ctx, "cell-h", i); // cell hue
+      g[idx++] = prfFloat(ctx, "cell-s", i); // cell sat
+      g[idx++] = prfFloat(ctx, "cell-l", i); // cell light
+    }
+    return g;
+  }
+
+  function mutateGenome(parent, ctx, sigma, gridN) {
+    const g = new Float32Array(parent.length);
+
+    // Background stays black
+    g[0] = 0;
+    g[1] = 0;
+    g[2] = 0;
+
+    // Per-cell mutation probability scales with sigma (so slider has intuitive effect)
+    const pCell = Math.min(0.95, Math.max(0.06, 0.18 + sigma * 1.3));
+
+    let idx = 3;
+    for (let cell = 0; cell < gridN*gridN; cell++) {
+      const baseH = parent[idx];
+      const baseS = parent[idx+1];
+      const baseL = parent[idx+2];
+
+      if (prfFloat(ctx, "mutate-gate", cell) < pCell) {
+        // uniform +/- range
+        const dh = (prfFloat(ctx, "mutate-dh", cell) * 2 - 1) * sigma * 0.45;
+        const ds = (prfFloat(ctx, "mutate-ds", cell) * 2 - 1) * sigma * 0.35;
+        const dl = (prfFloat(ctx, "mutate-dl", cell) * 2 - 1) * sigma * 0.35;
+
+        g[idx]   = wrap01(baseH + dh);
+        g[idx+1] = clamp01(baseS + ds);
+        g[idx+2] = clamp01(baseL + dl);
+      } else {
+        g[idx]   = baseH;
+        g[idx+1] = baseS;
+        g[idx+2] = baseL;
+      }
+      idx += 3;
+    }
+
+    // Occasional structure mutation: shift (row/col), swap, or duplicate
+    // (keeps the same "grid colors" idea, but introduces higher-level moves)
+    if (prfFloat(ctx, "struct-gate") < structProb) {
+      const op = prfFloat(ctx, "struct-op");
+      if (op < 0.5) {
+        // shift: row/col equally likely; left/right/up/down equally likely
+        if (prfFloat(ctx, "struct-axis") < 0.5) {
+          // shift a random row left/right by 1
+          const row = prfInt(ctx, "struct-row", gridN);
+          const dir = (prfFloat(ctx, "struct-dir") < 0.5) ? -1 : 1;
+          const rowStart = 3 + row * gridN * 3;
+          const copy = new Float32Array(gridN * 3);
+          copy.set(g.subarray(rowStart, rowStart + gridN*3));
+          for (let x=0; x<gridN; x++) {
+            const nx = (x + dir + gridN) % gridN;
+            g[rowStart + nx*3 + 0] = copy[x*3 + 0];
+            g[rowStart + nx*3 + 1] = copy[x*3 + 1];
+            g[rowStart + nx*3 + 2] = copy[x*3 + 2];
+          }
+        } else {
+          // shift a random column up/down by 1
+          const col = prfInt(ctx, "struct-col", gridN);
+          const dir = (prfFloat(ctx, "struct-dir") < 0.5) ? -1 : 1;
+          const copy = new Float32Array(gridN * 3);
+          for (let y=0; y<gridN; y++) {
+            const idx = 3 + (y * gridN + col) * 3;
+            copy[y*3 + 0] = g[idx + 0];
+            copy[y*3 + 1] = g[idx + 1];
+            copy[y*3 + 2] = g[idx + 2];
+          }
+          for (let y=0; y<gridN; y++) {
+            const ny = (y + dir + gridN) % gridN;
+            const dst = 3 + (ny * gridN + col) * 3;
+            g[dst + 0] = copy[y*3 + 0];
+            g[dst + 1] = copy[y*3 + 1];
+            g[dst + 2] = copy[y*3 + 2];
+          }
+        }
+      } else if (op < 0.75) {
+        // swap two random cells
+        const a = prfInt(ctx, "struct-swap-a", gridN*gridN);
+        const b = prfInt(ctx, "struct-swap-b", gridN*gridN);
+        const ia = 3 + a*3;
+        const ib = 3 + b*3;
+        for (let k=0; k<3; k++) {
+          const tmp = g[ia+k];
+          g[ia+k] = g[ib+k];
+          g[ib+k] = tmp;
+        }
+      } else {
+        // duplicate color: one random cell copies another
+        const src = prfInt(ctx, "struct-dup-src", gridN*gridN);
+        const dst = prfInt(ctx, "struct-dup-dst", gridN*gridN);
+        if (src !== dst) {
+          const isrc = 3 + src*3;
+          const idst = 3 + dst*3;
+          g[idst + 0] = g[isrc + 0];
+          g[idst + 1] = g[isrc + 1];
+          g[idst + 2] = g[isrc + 2];
+        }
+      }
+    }
+
+    return g;
+  }
+
+
+  // ---------------------------
+  // Grid resampling for "Buy" (scale refinement)
+  // ---------------------------
+  // Old grid (oldN×oldN) → new grid (newN×newN) by bilinear resampling in HSL.
+  // Hue is circular, so we interpolate hue on the unit circle (cos/sin).
+  function resampleGenome(parent, oldN, newN) {
+    // Option 5: 2×2 cell-duplicate refinement.
+    // If newN == oldN * 2, we *replicate* each old cell into a 2×2 block of identical H,S,L:
+    //
+    // oldN×oldN  →  (2·oldN)×(2·oldN)
+    //
+    // This keeps the exact pattern (no averaging) while increasing resolution. Future "Will"
+    // steps can then mutate at the finer scale.
+    //
+    // For any other size change (e.g. via the slider), we fall back to the original bilinear resample.
+    if (newN === oldN * 2) {
+      const out = new Float32Array(genomeLength(newN));
+
+      // Copy background (H,S,L)
+      out[0] = parent[0];
+      out[1] = parent[1];
+      out[2] = parent[2];
+
+      let outIdx = 3;
+      for (let y = 0; y < newN; y++) {
+        const yOld = Math.floor(y / 2);
+        for (let x = 0; x < newN; x++) {
+          const xOld = Math.floor(x / 2);
+          const src = 3 + (yOld * oldN + xOld) * 3;
+          out[outIdx++] = parent[src];     // H
+          out[outIdx++] = parent[src + 1]; // S
+          out[outIdx++] = parent[src + 2]; // L
+        }
+      }
+      return out;
+    }
+
+    // Fallback: original bilinear resampling in HSL (Hue on unit circle).
+      const out = new Float32Array(genomeLength(newN));
+
+      // Copy background (H,S,L)
+      out[0] = parent[0];
+      out[1] = parent[1];
+      out[2] = parent[2];
+
+      const denomNew = (newN > 1) ? (newN - 1) : 1;
+      const oldMax = oldN - 1;
+
+      let outIdx = 3;
+      for (let y = 0; y < newN; y++) {
+        const v = (newN > 1) ? (y / denomNew) : 0;
+        const yOld = v * oldMax;
+        const y0 = Math.floor(yOld);
+        const y1 = Math.min(oldMax, y0 + 1);
+        const ty = yOld - y0;
+
+        for (let x = 0; x < newN; x++) {
+          const u = (newN > 1) ? (x / denomNew) : 0;
+          const xOld = u * oldMax;
+          const x0 = Math.floor(xOld);
+          const x1 = Math.min(oldMax, x0 + 1);
+          const tx = xOld - x0;
+
+          const w00 = (1 - tx) * (1 - ty);
+          const w10 = tx * (1 - ty);
+          const w01 = (1 - tx) * ty;
+          const w11 = tx * ty;
+
+          const i00 = 3 + (y0 * oldN + x0) * 3;
+          const i10 = 3 + (y0 * oldN + x1) * 3;
+          const i01 = 3 + (y1 * oldN + x0) * 3;
+          const i11 = 3 + (y1 * oldN + x1) * 3;
+
+          // Hue (circular): interpolate on unit circle
+          const a00 = 2 * Math.PI * wrap01(parent[i00]);
+          const a10 = 2 * Math.PI * wrap01(parent[i10]);
+          const a01 = 2 * Math.PI * wrap01(parent[i01]);
+          const a11 = 2 * Math.PI * wrap01(parent[i11]);
+
+          const c =
+            Math.cos(a00) * w00 + Math.cos(a10) * w10 +
+            Math.cos(a01) * w01 + Math.cos(a11) * w11;
+
+          const s =
+            Math.sin(a00) * w00 + Math.sin(a10) * w10 +
+            Math.sin(a01) * w01 + Math.sin(a11) * w11;
+
+          let h;
+          const r2 = c*c + s*s;
+          if (r2 < 1e-10) {
+            h = parent[i00]; // fallback
+          } else {
+            let ang = Math.atan2(s, c);
+            if (ang < 0) ang += 2 * Math.PI;
+            h = ang / (2 * Math.PI);
+          }
+
+          // Sat/Light are linear in [0..1]
+          const sat =
+            parent[i00 + 1] * w00 + parent[i10 + 1] * w10 +
+            parent[i01 + 1] * w01 + parent[i11 + 1] * w11;
+
+          const lig =
+            parent[i00 + 2] * w00 + parent[i10 + 2] * w10 +
+            parent[i01 + 2] * w01 + parent[i11 + 2] * w11;
+
+          out[outIdx++] = wrap01(h);
+          out[outIdx++] = clamp01(sat);
+          out[outIdx++] = clamp01(lig);
+        }
+      }
+      return out;
+  }
+
+  // ---------------------------
+  // Rendering
+  // ---------------------------
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  let svgIdCounter = 0;
+
+  function setupSvg(svg, cssSize=220) {
+    svg._size = cssSize; // logical drawing size
+    svg.setAttribute("viewBox", `0 0 ${cssSize} ${cssSize}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("shape-rendering", "crispEdges");
+    svg.classList.add("grid-svg");
+    if (!svg._vignetteId) svg._vignetteId = `vignette-${++svgIdCounter}`;
+    return svg;
+  }
+
+  function renderGenomeToSvg(svg, genome, gridN) {
+    if (!svg._size) setupSvg(svg, 220);
+
+    const W = svg._size || 220;
+    const gap = 0; // no gap between cells
+    const cell = W / gridN;
+    const inset = gap * 0.5;
+    const vignetteId = svg._vignetteId || `vignette-${++svgIdCounter}`;
+    svg._vignetteId = vignetteId;
+
+    const parts = [];
+    parts.push(
+      `<defs><radialGradient id="${vignetteId}" cx="50%" cy="50%" r="80%">` +
+      `<stop offset="0%" stop-color="black" stop-opacity="0"/>` +
+      `<stop offset="100%" stop-color="black" stop-opacity="0.28"/>` +
+      `</radialGradient></defs>`
+    );
+
+    // Background used for gaps + framing
+    parts.push(`<rect width="${W}" height="${W}" fill="${hslToRgba(genome[0], genome[1], genome[2], 1.0)}"></rect>`);
+
+    // Draw cells
+    const strokeWidth = cellStroke * cell;
+    const strokeAttr = (cellStroke > 0)
+      ? ` stroke="#000" stroke-width="${strokeWidth}"`
+      : "";
+    let idx = 3;
+    for (let y=0; y<gridN; y++) {
+      for (let x=0; x<gridN; x++) {
+        const h = genome[idx++], sRaw = genome[idx++], lRaw = genome[idx++];
+        const s = 0.30 + 0.70 * sRaw;
+        const l = 0.05 + 0.90 * lRaw;
+        const px = x * cell + inset;
+        const py = y * cell + inset;
+        const size = cell - gap;
+        parts.push(`<rect x="${px}" y="${py}" width="${size}" height="${size}" fill="${hslToRgba(h, s, l, 1.0)}"${strokeAttr}></rect>`);
+      }
+    }
+
+    // subtle vignette (optional)
+    parts.push(`<rect width="${W}" height="${W}" fill="url(#${vignetteId})"></rect>`);
+
+    // subtle border
+    parts.push(`<rect x="0.5" y="0.5" width="${W-1}" height="${W-1}" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="1"></rect>`);
+
+    svg.innerHTML = parts.join("");
+  }
+
+  // ---------------------------
+  // App state
+  // ---------------------------
+  const gridEl = document.getElementById("grid");
+  const genEl = document.getElementById("gen");
+  const iterEl = document.getElementById("iter");
+  const selEl = document.getElementById("sel");
+  const sigmaEl = document.getElementById("sigma");
+  const sigmaValEl = document.getElementById("sigmaVal");
+  const gridNEl = document.getElementById("gridN");
+  const gridValEl = document.getElementById("gridVal");
+  const strokeEl = document.getElementById("cellStroke");
+  const strokeValEl = document.getElementById("strokeVal");
+  const structEl = document.getElementById("structProb");
+  const structValEl = document.getElementById("structVal");
+  const traceGroupsEl = document.getElementById("traceGroups");
+
+  const evolveBtn = document.getElementById("evolveBtn");
+  const buyBtn = document.getElementById("buyBtn");
+  const downloadBtn = document.getElementById("downloadBtn");
+
+  // New key so it doesn't fight with the old geometry demo's localStorage
+  const STORAGE_KEY = "evo_color_grid_demo_option5_cell_duplicate_prng_prf";
+
+  const GRID_SIZE = 3;
+  const TILE_COUNT = GRID_SIZE * GRID_SIZE;
+  const PARENT_INDEX = 4;
+
+  let iteration = 0;
+  let candidateOffset = 0;
+  let traceGroups = [];
+  let activeGroupIndex = 0;
+  let selectedIndex = null; // 0..8
+  let gridN = parseInt(gridNEl.value, 10);   // N for NxN
+  let sigma = parseFloat(sigmaEl.value);
+  let cellStroke = parseFloat(strokeEl.value);
+  let structProb = parseFloat(structEl.value);
+
+  // RNG for run/session; seeds stored so it can reload deterministically
+  let rootSeed = randomSeed32();
+  let baseSeed = rootSeed;
+
+  // Population: array of {seed, genome}
+  let population = [];
+
+  function saveState() {
+    const obj = {
+      iteration,
+      selectedIndex,
+      gridN,
+      sigma,
+      cellStroke,
+      structProb,
+      rootSeed,
+      baseSeed,
+      candidateOffset,
+      traceGroups,
+      activeGroupIndex,
+      population: population.map(p => ({seed: p.seed, genome: Array.from(p.genome)})),
+    };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const obj = JSON.parse(raw);
+
+      iteration = obj.iteration ?? obj.generation ?? 0;
+      selectedIndex = obj.selectedIndex ?? null;
+      gridN = obj.gridN ?? gridN;
+      sigma = obj.sigma ?? sigma;
+      cellStroke = obj.cellStroke ?? cellStroke;
+      structProb = obj.structProb ?? structProb;
+      rootSeed = obj.rootSeed ?? rootSeed;
+      baseSeed = obj.baseSeed ?? baseSeed;
+      candidateOffset = obj.candidateOffset ?? 0;
+      traceGroups = Array.isArray(obj.traceGroups) ? obj.traceGroups : [];
+      activeGroupIndex = obj.activeGroupIndex ?? 0;
+
+      if (!traceGroups.length) {
+        const legacyInit = obj.initialColor ?? "";
+        const legacyRows = Array.isArray(obj.traceRows) ? obj.traceRows : [];
+        traceGroups = [{
+          initColor: legacyInit,
+          rows: legacyRows.length ? legacyRows : defaultTraceRows(),
+          collapsed: false,
+        }];
+      }
+      if (!traceGroups.length) {
+        traceGroups = [{initColor: "", rows: defaultTraceRows(), collapsed: false}];
+      }
+      activeGroupIndex = Math.max(0, Math.min(activeGroupIndex, traceGroups.length - 1));
+      const activeInit = traceGroups[activeGroupIndex].initColor || "";
+      const initValid = parseHexColor(activeInit);
+      if (!initValid) {
+        population = [];
+        selectedIndex = null;
+        iteration = 0;
+        candidateOffset = 0;
+        gridN = 1;
+      }
+
+      gridNEl.value = String(gridN);
+      sigmaEl.value = String(sigma);
+      strokeEl.value = String(cellStroke);
+      structEl.value = String(structProb);
+
+      if (initValid) {
+        population = (obj.population || []).map(p => ({
+          seed: p.seed,
+          genome: new Float32Array(p.genome),
+        }));
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function formatGridN(n) {
+    const exp = Math.log2(n);
+    if (!Number.isFinite(exp)) return String(n);
+    const rounded = Math.round(exp);
+    if (Math.abs(exp - rounded) < 1e-6) return `2^${rounded}`;
+    return `2^${exp.toFixed(2)}`;
+  }
+
+  function gridExponent(n) {
+    const exp = Math.log2(n);
+    if (!Number.isFinite(exp)) return String(n);
+    const rounded = Math.round(exp);
+    if (Math.abs(exp - rounded) < 1e-6) return String(rounded);
+    return exp.toFixed(2);
+  }
+
+  function gridExponentInt(n) {
+    const exp = Math.log2(n);
+    if (!Number.isFinite(exp)) return 0;
+    return Math.round(exp);
+  }
+
+  function makeCtx(candIndex) {
+    return {
+      seed: rootSeed >>> 0,
+      gen: gridExponentInt(gridN),
+      iter: iteration >>> 0,
+      cand: candIndex >>> 0,
+    };
+  }
+
+  function updateUI() {
+    const hasPop = (population.length === TILE_COUNT);
+    genEl.textContent = gridExponent(gridN);
+    iterEl.textContent = iteration;
+    if (selectedIndex === null || selectedIndex === PARENT_INDEX) {
+      selEl.textContent = "—";
+    } else {
+      const mutantNumber = (selectedIndex < PARENT_INDEX) ? (selectedIndex + 1) : selectedIndex;
+      selEl.textContent = String(candidateOffset + mutantNumber);
+    }
+    sigmaValEl.textContent = sigma.toFixed(2);
+    gridValEl.textContent = formatGridN(gridN);
+    strokeValEl.textContent = String(cellStroke);
+    structValEl.textContent = structProb.toFixed(2);
+    const maxN = parseInt(gridNEl.max, 10) || 256;
+    evolveBtn.disabled = !hasPop;
+    buyBtn.disabled = !hasPop || (selectedIndex !== PARENT_INDEX) || (gridN * 2 > maxN);
+    downloadBtn.disabled = !hasPop;
+    const activeGroupEl = getActiveGroupEl();
+    const activeInit = activeGroupEl ? activeGroupEl.querySelector(".init-color").value.trim() : "";
+    const lockSigma = !!parseHexColor(activeInit);
+    sigmaEl.disabled = lockSigma;
+  }
+
+  function buildPopulationFromParent(parentGenome) {
+    population = new Array(TILE_COUNT);
+    const parentCtx = makeCtx(0);
+    population[PARENT_INDEX] = {
+      seed: prfUint(parentCtx, "candidate-seed"),
+      genome: new Float32Array(parentGenome),
+    };
+    for (let i=0; i<TILE_COUNT; i++) {
+      if (i === PARENT_INDEX) continue;
+      const mutantNumber = (i < PARENT_INDEX) ? (i + 1) : i;
+      const candidateIndex = candidateOffset + mutantNumber;
+      const ctx = makeCtx(candidateIndex);
+      const seed = prfUint(ctx, "candidate-seed");
+      population[i] = {seed, genome: mutateGenome(parentGenome, ctx, sigma, gridN)};
+    }
+  }
+
+  function buildGrid(blank = false) {
+    gridEl.innerHTML = "";
+    for (let i=0; i<TILE_COUNT; i++) {
+      const tile = document.createElement("div");
+      tile.className = blank ? "tile blank" : "tile";
+      tile.dataset.index = String(i);
+
+      if (blank) {
+        gridEl.appendChild(tile);
+        continue;
+      }
+
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      if (i === PARENT_INDEX) {
+        badge.textContent = "Current";
+      } else {
+        const mutantNumber = (i < PARENT_INDEX) ? (i + 1) : i;
+        const candidateIndex = candidateOffset + mutantNumber;
+        badge.textContent = `Mutant (${candidateIndex})`;
+      }
+      tile.appendChild(badge);
+
+      const svg = document.createElementNS(SVG_NS, "svg");
+      setupSvg(svg, 220);
+      tile.appendChild(svg);
+
+      tile.addEventListener("click", () => selectIndex(i));
+      gridEl.appendChild(tile);
+
+      population[i].svg = svg;
+      population[i].tile = tile;
+    }
+    renderAll();
+    applySelectionStyles();
+  }
+
+  function renderAll() {
+    for (let i=0; i<population.length; i++) {
+      renderGenomeToSvg(population[i].svg, population[i].genome, gridN);
+    }
+  }
+
+  function applySelectionStyles() {
+    for (let i=0; i<population.length; i++) {
+      population[i].tile.classList.toggle("selected", i === selectedIndex);
+    }
+  }
+
+  function selectIndex(i) {
+    selectedIndex = i;
+    applySelectionStyles();
+    updateTracePickFromSelection();
+    updateUI();
+    saveState();
+  }
+
+  function updateTracePickFromSelection() {
+    if (selectedIndex === null || selectedIndex === PARENT_INDEX) return;
+    const groupEl = getActiveGroupEl();
+    if (!groupEl) return;
+    const mutantNumber = (selectedIndex < PARENT_INDEX) ? (selectedIndex + 1) : selectedIndex;
+    const candidateIndex = candidateOffset + mutantNumber;
+    const rowsEl = groupEl.querySelector(".trace-rows");
+    const rows = rowsEl ? rowsEl.querySelectorAll(".trace-row") : [];
+    if (!rows.length) return;
+    const lastRow = rows[rows.length - 1];
+    const pickEl = lastRow.querySelector('[data-field="pick"]');
+    if (!pickEl) return;
+    pickEl.value = String(candidateIndex);
+    syncTraceGroupsFromDom();
+  }
+
+  function createInitialPopulation(initRgb) {
+    iteration = 1;
+    candidateOffset = 0;
+    const parent = getInitialParentGenome(initRgb, gridN);
+    buildPopulationFromParent(parent);
+    selectedIndex = PARENT_INDEX;
+  }
+
+  function evolveFromSelected() {
+    if (population.length === 0) return;
+    const i = (selectedIndex === null) ? PARENT_INDEX : selectedIndex;
+    const parentGenome = population[i].genome;
+    const groupEl = getActiveGroupEl();
+
+    if (i === PARENT_INDEX) {
+      // Keep parent, refresh mutants (iteration stays)
+      candidateOffset += (TILE_COUNT - 1);
+      buildPopulationFromParent(parentGenome);
+      selectedIndex = PARENT_INDEX;
+      buildGrid();
+      updateUI();
+      saveState();
+      if (groupEl && shouldAddWaitingRow(groupEl)) addTraceRowToGroup(groupEl);
+      return;
+    }
+
+    iteration += 1;
+    candidateOffset = 0;
+    buildPopulationFromParent(parentGenome);
+    selectedIndex = PARENT_INDEX;
+    buildGrid();
+    updateUI();
+    saveState();
+    if (groupEl && shouldAddWaitingRow(groupEl)) addTraceRowToGroup(groupEl);
+  }
+
+
+  function setGridSizeFromSelected(newN, nextIter = 0) {
+    if (!population || population.length === 0) return;
+
+    const oldN = gridN;
+    const maxN = parseInt(gridNEl.max, 10) || 256;
+    newN = Math.max(1, Math.min(maxN, newN));
+    if (newN === oldN) return;
+
+    const i = (selectedIndex === null) ? PARENT_INDEX : selectedIndex;
+    const parentOld = population[i].genome;
+
+    // Refine/resample the chosen genome to the new resolution
+    const refinedParent = resampleGenome(parentOld, oldN, newN);
+
+    // Update grid size
+    gridN = newN;
+    gridNEl.value = String(newN);
+
+    iteration = nextIter;
+    candidateOffset = 0;
+    baseSeed = rootSeed;
+    buildPopulationFromParent(refinedParent);
+    selectedIndex = PARENT_INDEX;
+    buildGrid();
+    updateUI();
+    saveState();
+  }
+
+
+  function defaultTraceRows() {
+    return [
+      {gen: "0", iter: "0", pick: "Genesis"},
+      {gen: "0", iter: "1", pick: ""},
+    ];
+  }
+
+  function getActiveGroupEl() {
+    const groups = traceGroupsEl.querySelectorAll(".trace-group");
+    if (!groups.length) return null;
+    const idx = Math.max(0, Math.min(activeGroupIndex, groups.length - 1));
+    return groups[idx];
+  }
+
+  function setActiveGroupByEl(groupEl) {
+    if (!groupEl) return;
+    const idx = parseInt(groupEl.dataset.index, 10);
+    activeGroupIndex = Number.isFinite(idx) ? idx : 0;
+  }
+
+  function getInitialParentGenome(initRgb, n) {
+    if (initRgb && n === 1) {
+      const hsl = rgbToHsl(initRgb.r, initRgb.g, initRgb.b);
+      return initialColorToGenome(n, hsl);
+    }
+    return randomGenome(makeCtx(0), n);
+  }
+
+  function createTraceRow(gen = "", iter = "", pick = "") {
+    const row = document.createElement("div");
+    row.className = "trace-row";
+    row.innerHTML = `
+      <input class="text-input small" data-field="gen" type="text" placeholder="Gen" />
+      <input class="text-input small" data-field="iter" type="text" placeholder="Iter" />
+      <input class="text-input small" data-field="pick" type="text" placeholder="Pick" />
+    `;
+    row.querySelector('[data-field="gen"]').value = gen;
+    row.querySelector('[data-field="iter"]').value = iter;
+    row.querySelector('[data-field="pick"]').value = pick;
+    return row;
+  }
+
+  function readTraceRows(rowsEl) {
+    const rows = [];
+    rowsEl.querySelectorAll(".trace-row").forEach((row) => {
+      const gen = row.querySelector('[data-field="gen"]').value.trim();
+      const iter = row.querySelector('[data-field="iter"]').value.trim();
+      const pick = row.querySelector('[data-field="pick"]').value.trim();
+      rows.push({gen, iter, pick});
+    });
+    return rows;
+  }
+
+  function renderTraceRows(rowsEl, rows) {
+    const safeRows = rows && rows.length ? rows : defaultTraceRows();
+    rowsEl.innerHTML = "";
+    safeRows.forEach((r) => {
+      rowsEl.appendChild(createTraceRow(r.gen, r.iter, r.pick));
+    });
+  }
+
+  function createTraceGroupElement(group, index) {
+    const el = document.createElement("div");
+    el.className = "trace-group";
+    el.dataset.index = String(index);
+    if (group && group.collapsed) el.classList.add("collapsed");
+    const foldLabel = (group && group.collapsed) ? "Unfold" : "Fold";
+    el.innerHTML = `
+      <div class="trace-row">
+        <label>Init Color</label>
+        <input class="text-input init-color" type="text" spellcheck="false" autocomplete="off" placeholder="#aabbcc" />
+        <button class="danger mini-btn trace-reset" title="Start over">Reset</button>
+        <button class="mini-btn trace-fold" title="Fold this trace">${foldLabel}</button>
+      </div>
+      <div class="trace-body">
+        <div class="trace-rows"></div>
+        <div class="trace-actions">
+          <button class="mini-btn trace-add">+</button>
+          <button class="mini-btn trace-remove">-</button>
+          <button class="mini-btn trace-apply">Apply</button>
+          <button class="mini-btn trace-fork">Fork</button>
+          <button class="mini-btn trace-delete">Delete</button>
+          <button class="mini-btn trace-export" title="Export this trace as JSON">Export</button>
+          <button class="mini-btn trace-import" title="Import a trace JSON into this group">Import</button>
+        </div>
+      </div>
+    `;
+    const initInput = el.querySelector(".init-color");
+    initInput.value = group.initColor || "";
+    renderTraceRows(el.querySelector(".trace-rows"), group.rows);
+    const bodyEl = el.querySelector(".trace-body");
+    if (bodyEl && Number.isFinite(group.scrollTop)) {
+      bodyEl.scrollTop = group.scrollTop;
+    }
+    return el;
+  }
+
+  function renderTraceGroups() {
+    if (!traceGroups.length) traceGroups = [{initColor: "", rows: defaultTraceRows(), collapsed: false}];
+    // Preserve scroll positions before re-render
+    traceGroupsEl.querySelectorAll(".trace-group").forEach((groupEl) => {
+      const idx = parseInt(groupEl.dataset.index, 10);
+      if (!Number.isFinite(idx) || !traceGroups[idx]) return;
+      const bodyEl = groupEl.querySelector(".trace-body");
+      if (bodyEl) traceGroups[idx].scrollTop = bodyEl.scrollTop;
+    });
+    traceGroupsEl.innerHTML = "";
+    const activeIdx = Math.max(0, Math.min(activeGroupIndex, traceGroups.length - 1));
+    traceGroups.forEach((g, i) => {
+      const el = createTraceGroupElement(g, i);
+      if (i === activeIdx) el.classList.add("active");
+      traceGroupsEl.appendChild(el);
+    });
+    activeGroupIndex = activeIdx;
+    // Restore scroll positions after layout
+    requestAnimationFrame(() => {
+      traceGroupsEl.querySelectorAll(".trace-group").forEach((groupEl) => {
+        const idx = parseInt(groupEl.dataset.index, 10);
+        if (!Number.isFinite(idx) || !traceGroups[idx]) return;
+        const bodyEl = groupEl.querySelector(".trace-body");
+        if (bodyEl && Number.isFinite(traceGroups[idx].scrollTop)) {
+          bodyEl.scrollTop = traceGroups[idx].scrollTop;
+        }
+      });
+    });
+  }
+
+  function readGroupFromDom(groupEl) {
+    const initColor = groupEl.querySelector(".init-color").value.trim();
+    const rowsEl = groupEl.querySelector(".trace-rows");
+    const bodyEl = groupEl.querySelector(".trace-body");
+    const collapsed = groupEl.classList.contains("collapsed");
+    const scrollTop = bodyEl ? bodyEl.scrollTop : 0;
+    return {initColor, rows: readTraceRows(rowsEl), collapsed, scrollTop};
+  }
+
+  function normalizeTraceGroup(group) {
+    const initColor = String(group && group.initColor ? group.initColor : "").trim();
+    const rawRows = Array.isArray(group && group.rows) ? group.rows : [];
+    const rows = rawRows.map((r) => ({
+      gen: String((r && r.gen !== undefined) ? r.gen : ""),
+      iter: String((r && r.iter !== undefined) ? r.iter : ""),
+      pick: String((r && r.pick !== undefined) ? r.pick : ""),
+    }));
+    const collapsed = !!(group && group.collapsed);
+    const scrollTop = Number.isFinite(group && group.scrollTop) ? group.scrollTop : 0;
+    return {initColor, rows: rows.length ? rows : defaultTraceRows(), collapsed, scrollTop};
+  }
+
+  function syncTraceGroupsFromDom() {
+    const groups = [];
+    traceGroupsEl.querySelectorAll(".trace-group").forEach((groupEl) => {
+      groups.push(readGroupFromDom(groupEl));
+    });
+    traceGroups = groups.length ? groups : [{initColor: "", rows: defaultTraceRows(), collapsed: false}];
+    activeGroupIndex = Math.max(0, Math.min(activeGroupIndex, traceGroups.length - 1));
+    saveState();
+  }
+
+  function addTraceRowToGroup(groupEl) {
+    const data = readGroupFromDom(groupEl);
+    const last = data.rows[data.rows.length - 1] || {gen: "0", iter: "0", pick: ""};
+    const lastGen = parseInt(last.gen, 10);
+    const lastIter = parseInt(last.iter, 10);
+    const gen = Number.isFinite(lastGen) ? String(lastGen) : "0";
+    const iter = Number.isFinite(lastIter) ? String(lastIter + 1) : "0";
+    data.rows.push({gen, iter, pick: ""});
+    traceGroups[parseInt(groupEl.dataset.index, 10) || 0] = data;
+    renderTraceGroups();
+    saveState();
+  }
+
+  function shouldAddWaitingRow(groupEl) {
+    const rowsEl = groupEl.querySelector(".trace-rows");
+    const rows = rowsEl ? rowsEl.querySelectorAll(".trace-row") : [];
+    if (!rows.length) return true;
+    const lastRow = rows[rows.length - 1];
+    const pickEl = lastRow.querySelector('[data-field="pick"]');
+    if (!pickEl) return true;
+    const raw = String(pickEl.value || "").trim();
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 1;
+  }
+
+
+  function removeLastTraceRowFromGroup(groupEl) {
+    const data = readGroupFromDom(groupEl);
+    data.rows.pop();
+    data.rows = data.rows.length ? data.rows : defaultTraceRows();
+    traceGroups[parseInt(groupEl.dataset.index, 10) || 0] = data;
+    renderTraceGroups();
+    saveState();
+  }
+
+  function forkTraceGroup(groupEl) {
+    const idx = parseInt(groupEl.dataset.index, 10) || 0;
+    const bodyEl = groupEl.querySelector(".trace-body");
+    const data = readGroupFromDom(groupEl);
+    traceGroups.splice(idx + 1, 0, {initColor: data.initColor, rows: data.rows.map(r => ({...r})), collapsed: false, scrollTop: bodyEl ? bodyEl.scrollTop : 0});
+    activeGroupIndex = idx + 1;
+    renderTraceGroups();
+    saveState();
+    const newGroup = traceGroupsEl.querySelector(`.trace-group[data-index=\"${idx + 1}\"]`);
+    if (newGroup) {
+      setActiveGroupByEl(newGroup);
+      applyTraceFromGroup(newGroup, {addRow: false});
+    }
+  }
+
+  function deleteTraceGroup(groupEl) {
+    if (!groupEl) return;
+    const idx = parseInt(groupEl.dataset.index, 10) || 0;
+    if (traceGroups.length <= 1) {
+      resetFromGroup(groupEl);
+      return;
+    }
+    traceGroups.splice(idx, 1);
+    activeGroupIndex = Math.max(0, Math.min(activeGroupIndex, traceGroups.length - 1));
+    renderTraceGroups();
+    saveState();
+    const active = getActiveGroupEl();
+    if (active) applyTraceFromGroup(active, {addRow: false});
+  }
+
+  function toggleTraceGroupFold(groupEl) {
+    const idx = parseInt(groupEl.dataset.index, 10) || 0;
+    groupEl.classList.toggle("collapsed");
+    const data = readGroupFromDom(groupEl);
+    traceGroups[idx] = data;
+    renderTraceGroups();
+    saveState();
+  }
+
+  function exportTraceGroup(groupEl) {
+    const data = readGroupFromDom(groupEl);
+    const payload = {
+      version: 1,
+      settings: {
+        sigma,
+        structProb,
+        cellStroke,
+      },
+      initColor: data.initColor,
+      rows: data.rows,
+    };
+    const filename = `trace_${Date.now()}.json`;
+    downloadText(filename, JSON.stringify(payload, null, 2));
+  }
+
+  function importTraceToGroup(groupEl, payload) {
+    if (!payload || typeof payload !== "object") return false;
+    const idx = parseInt(groupEl.dataset.index, 10) || 0;
+    if (payload.settings && typeof payload.settings === "object") {
+      const nextSigma = parseFloat(payload.settings.sigma);
+      const nextStruct = parseFloat(payload.settings.structProb);
+      const nextStroke = parseFloat(payload.settings.cellStroke);
+      if (Number.isFinite(nextSigma)) {
+        sigma = nextSigma;
+        sigmaEl.value = String(sigma);
+      }
+      if (Number.isFinite(nextStruct)) {
+        structProb = nextStruct;
+        structEl.value = String(structProb);
+      }
+      if (Number.isFinite(nextStroke)) {
+        cellStroke = nextStroke;
+        strokeEl.value = String(cellStroke);
+      }
+      updateUI();
+    }
+    if (Array.isArray(payload.groups)) {
+      const groups = payload.groups.map(normalizeTraceGroup).filter(g => g.rows.length);
+      if (!groups.length) return false;
+      traceGroups = groups;
+      activeGroupIndex = Math.max(0, Math.min(idx, traceGroups.length - 1));
+      renderTraceGroups();
+      saveState();
+      return true;
+    }
+    if ("initColor" in payload || "rows" in payload) {
+      traceGroups[idx] = normalizeTraceGroup(payload);
+      renderTraceGroups();
+      saveState();
+      return true;
+    }
+    return false;
+  }
+
+  function triggerImportTrace(groupEl) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json";
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) {
+        input.remove();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const payload = JSON.parse(String(reader.result || ""));
+          const ok = importTraceToGroup(groupEl, payload);
+          if (!ok) alert("Invalid trace file.");
+        } catch (e) {
+          alert("Invalid trace file.");
+        } finally {
+          input.remove();
+        }
+      };
+      reader.readAsText(file);
+    });
+    document.body.appendChild(input);
+    input.click();
+  }
+
+  function resetAll() {
+    const groupEl = getActiveGroupEl();
+    resetFromGroup(groupEl);
+  }
+
+  function resetFromGroup(groupEl) {
+    if (!groupEl) return;
+    const data = readGroupFromDom(groupEl);
+    const initRgb = parseHexColor(data.initColor);
+    if (!initRgb) {
+      population = [];
+      selectedIndex = null;
+      iteration = 0;
+      candidateOffset = 0;
+      gridN = 1;
+      gridNEl.value = "1";
+      data.rows = defaultTraceRows();
+      traceGroups[parseInt(groupEl.dataset.index, 10) || 0] = data;
+      renderTraceGroups();
+      buildGrid(true);
+      updateUI();
+      saveState();
+      return;
+    }
+    rootSeed = seedFromColor(initRgb);
+    baseSeed = rootSeed;
+    const initInput = groupEl.querySelector(".init-color");
+    if (initInput) initInput.value = colorFromSeed(rootSeed);
+    gridN = 1;
+    gridNEl.value = "1";
+    candidateOffset = 0;
+    data.rows = defaultTraceRows();
+    traceGroups[parseInt(groupEl.dataset.index, 10) || 0] = data;
+    renderTraceGroups();
+    createInitialPopulation(initRgb);
+    buildGrid();
+    updateUI();
+    saveState();
+  }
+
+  function mutantNumberToTileIndex(mutantNumber) {
+    if (mutantNumber <= PARENT_INDEX) return mutantNumber - 1;
+    return mutantNumber;
+  }
+
+  function applyTraceFromGroup(groupEl, options = {}) {
+    if (!groupEl) return;
+    setActiveGroupByEl(groupEl);
+    syncTraceGroupsFromDom();
+    let didApply = false;
+    let shouldAddRow = false;
+    try {
+      const data = readGroupFromDom(groupEl);
+      if (!data.rows.length) data.rows = defaultTraceRows();
+      const lastRow = data.rows[data.rows.length - 1];
+      const allowAdd = options.addRow !== false;
+      shouldAddRow = allowAdd && !!(lastRow && String(lastRow.pick || "").trim());
+      const initRgb = parseHexColor(data.initColor);
+      if (!initRgb) {
+        resetFromGroup(groupEl);
+        return;
+      }
+
+      rootSeed = seedFromColor(initRgb);
+      baseSeed = rootSeed;
+      const initInput = groupEl.querySelector(".init-color");
+      if (initInput) initInput.value = colorFromSeed(rootSeed);
+
+      const maxN = parseInt(gridNEl.max, 10) || 256;
+      const maxExp = Math.floor(Math.log2(maxN));
+
+      let parentGenome = initialColorToGenome(1, rgbToHsl(initRgb.r, initRgb.g, initRgb.b));
+      gridN = 1;
+      gridNEl.value = "1";
+      iteration = 1;
+      candidateOffset = 0;
+
+      let currentGen = 0;
+      let currentIter = iteration;
+      let pendingNextIter = null;
+
+      const rows = data.rows || [];
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const genRaw = parseInt(row.gen, 10);
+        let genChanged = false;
+        if (Number.isFinite(genRaw) && genRaw !== currentGen) {
+          const clampedGen = Math.max(0, Math.min(maxExp, genRaw));
+          const newN = Math.max(1, Math.pow(2, clampedGen));
+          parentGenome = resampleGenome(parentGenome, gridN, newN);
+          gridN = newN;
+          gridNEl.value = String(newN);
+          currentGen = clampedGen;
+          currentIter = 0;
+          genChanged = true;
+        }
+
+        const iterRaw = parseInt(row.iter, 10);
+        const rowIter = Number.isFinite(iterRaw) ? Math.max(0, iterRaw) : null;
+        if (rowIter !== null) currentIter = rowIter;
+
+        const pickRaw = parseInt(row.pick, 10);
+        if (!Number.isFinite(pickRaw) || pickRaw < 1) {
+          if (genChanged && rowIter !== null) {
+            currentIter = rowIter;
+          }
+          continue;
+        }
+
+        const hasNextRow = (idx < rows.length - 1);
+        if (!hasNextRow) {
+          // Pick is pending until a following row is created by Will
+          if (rowIter !== null) currentIter = rowIter;
+          pendingNextIter = (rowIter !== null ? rowIter + 1 : (currentIter + 1));
+          continue;
+        }
+
+        const targetIter = rowIter !== null ? rowIter : currentIter;
+        iteration = targetIter;
+        candidateOffset = Math.floor((pickRaw - 1) / (TILE_COUNT - 1)) * (TILE_COUNT - 1);
+        buildPopulationFromParent(parentGenome);
+
+        const mutantNumber = pickRaw - candidateOffset;
+        if (mutantNumber < 1 || mutantNumber > (TILE_COUNT - 1)) continue;
+        const tileIndex = mutantNumberToTileIndex(mutantNumber);
+        parentGenome = population[tileIndex].genome;
+        currentIter = targetIter + 1;
+      }
+
+      iteration = pendingNextIter !== null ? pendingNextIter : currentIter;
+      candidateOffset = 0;
+      buildPopulationFromParent(parentGenome);
+      selectedIndex = PARENT_INDEX;
+      buildGrid();
+      updateUI();
+      saveState();
+      didApply = true;
+    } finally {
+      if (didApply && shouldAddRow) addTraceRowToGroup(groupEl);
+    }
+  }
+
+  // ---------------------------
+  function downloadSelectedSvg() {
+    if (!population || population.length === 0) return;
+    const i = (selectedIndex === null) ? PARENT_INDEX : selectedIndex;
+    const svg = population[i] && population[i].svg;
+    if (!svg) return;
+
+    const serializer = new XMLSerializer();
+    let data = serializer.serializeToString(svg);
+    if (!data.includes("xmlns=")) {
+      data = data.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+    }
+    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${data}`], {type: "image/svg+xml"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grid_${gridN}x${gridN}_${i+1}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function buyFromParent() {
+    if (buyBtn.disabled) return;
+    setGridSizeFromSelected(gridN * 2, 1);
+    const groupEl = getActiveGroupEl();
+    if (!groupEl) return;
+    const data = readGroupFromDom(groupEl);
+    const newGen = String(gridExponentInt(gridN));
+    const last = data.rows[data.rows.length - 1];
+    if (last && String(last.pick || "").trim() === "") {
+      last.gen = newGen;
+      last.iter = "0";
+      last.pick = "Sold";
+    } else {
+      data.rows.push({gen: newGen, iter: "0", pick: "Sold"});
+    }
+    data.rows.push({gen: newGen, iter: "1", pick: ""});
+    traceGroups[parseInt(groupEl.dataset.index, 10) || 0] = data;
+    renderTraceGroups();
+    saveState();
+  }
+
+  function downloadFromSelected() {
+    if (!population || population.length === 0) return;
+    downloadSelectedSvg();
+  }
+
+  // ---------------------------
+  // Events
+  // ---------------------------
+  sigmaEl.addEventListener("input", () => {
+    sigma = parseFloat(sigmaEl.value);
+    updateUI();
+    saveState();
+  });
+
+  strokeEl.addEventListener("input", () => {
+    cellStroke = parseFloat(strokeEl.value);
+    updateUI();
+    renderAll();
+    saveState();
+  });
+
+  structEl.addEventListener("input", () => {
+    structProb = parseFloat(structEl.value);
+    updateUI();
+    saveState();
+  });
+
+  gridNEl.addEventListener("input", () => {
+    // Preview the value while sliding (does not change the current genome yet)
+    gridValEl.textContent = formatGridN(parseInt(gridNEl.value, 10));
+  });
+
+  gridNEl.addEventListener("change", () => {
+    const newN = parseInt(gridNEl.value, 10);
+    setGridSizeFromSelected(newN, iteration);
+  });
+
+  evolveBtn.addEventListener("click", evolveFromSelected);
+  buyBtn.addEventListener("click", buyFromParent);
+  downloadBtn.addEventListener("click", downloadFromSelected);
+  traceGroupsEl.addEventListener("click", (e) => {
+    const groupEl = e.target.closest(".trace-group");
+    if (!groupEl) return;
+    setActiveGroupByEl(groupEl);
+    if (e.target.closest(".trace-add")) addTraceRowToGroup(groupEl);
+    if (e.target.closest(".trace-remove")) removeLastTraceRowFromGroup(groupEl);
+    if (e.target.closest(".trace-apply")) applyTraceFromGroup(groupEl);
+    if (e.target.closest(".trace-fork")) forkTraceGroup(groupEl);
+    if (e.target.closest(".trace-delete")) deleteTraceGroup(groupEl);
+    if (e.target.closest(".trace-reset")) resetFromGroup(groupEl);
+    if (e.target.closest(".trace-fold")) toggleTraceGroupFold(groupEl);
+    if (e.target.closest(".trace-export")) exportTraceGroup(groupEl);
+    if (e.target.closest(".trace-import")) triggerImportTrace(groupEl);
+  });
+
+  traceGroupsEl.addEventListener("input", (e) => {
+    const groupEl = e.target.closest(".trace-group");
+    if (!groupEl) return;
+    setActiveGroupByEl(groupEl);
+    if (e.target.dataset && e.target.dataset.field === "gen") {
+      const row = e.target.closest(".trace-row");
+      if (row) {
+        const iterEl = row.querySelector('[data-field="iter"]');
+        if (iterEl) iterEl.value = "0";
+      }
+    }
+    syncTraceGroupsFromDom();
+    updateUI();
+  });
+
+  traceGroupsEl.addEventListener("focusin", (e) => {
+    const groupEl = e.target.closest(".trace-group");
+    if (!groupEl) return;
+    setActiveGroupByEl(groupEl);
+  });
+
+  window.addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (k === "w") {
+      evolveFromSelected();
+    }
+    if (k === "b") {
+      buyFromParent();
+    }
+  });
+
+  window.addEventListener("message", (e) => {
+    const data = e.data;
+    if (!data || data.type !== "REQUEST_PRNG_TRACE") return;
+    const payload = {
+      version: 1,
+      settings: {
+        sigma,
+        structProb,
+        cellStroke,
+      },
+      groups: traceGroups,
+    };
+    try {
+      if (e.source && typeof e.source.postMessage === "function") {
+        e.source.postMessage({type: "PRNG_TRACE", payload}, "*");
+      }
+    } catch (err) {}
+  });
+
+  // ---------------------------
+  // Init
+  // ---------------------------
+  const loaded = loadState();
+  const expectedLen = genomeLength(gridN);
+  renderTraceGroups();
+  const activeGroupEl = getActiveGroupEl();
+  const activeInit = activeGroupEl ? activeGroupEl.querySelector(".init-color").value.trim() : "";
+  const initRgb = parseHexColor(activeInit);
+  if (initRgb) {
+    applyTraceFromGroup(activeGroupEl, {addRow: false});
+  } else {
+    population = [];
+    selectedIndex = null;
+    iteration = 0;
+    candidateOffset = 0;
+    gridN = 1;
+    gridNEl.value = "1";
+    buildGrid(true);
+  }
+  updateUI();
+  saveState();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WILLMAP</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #121a27;
+      --panel2: #0f1622;
+      --text: #e8eefc;
+      --muted: #b6c2e2;
+      --accent: #7aa2ff;
+      --border: rgba(255,255,255,.12);
+      --node: rgba(15, 22, 34, .88);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 20% 0%, #1a2a52 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    header {
+      padding: 18px 18px 6px 18px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: .3px;
+    }
+    header p {
+      margin: 6px 0 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .controls {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 10px 18px 16px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      align-items: center;
+    }
+    button {
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(15, 22, 34, .8);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button:hover { border-color: rgba(122,162,255,.6); }
+    .field {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(15, 22, 34, .6);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px;
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+    .field label { color: var(--muted); font-size: 12px; }
+    .field input {
+      width: 70px;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      outline: none;
+    }
+    #mapWrap {
+      position: relative;
+      margin: 0 auto 30px auto;
+      max-width: 1200px;
+      height: 70vh;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(10, 15, 24, .6);
+      overflow: auto;
+    }
+    #edges {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    #nodes {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .node {
+      position: absolute;
+      width: 64px;
+      height: 78px;
+      background: var(--node);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .node svg {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 4px;
+      background: #0a0f18;
+      display: block;
+    }
+    .node:hover { z-index: 10; }
+    .node .meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 8px;
+      color: var(--muted);
+    }
+    .empty {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    #zoomOverlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 999;
+    }
+    #zoomOverlay.active { display: flex; }
+    #zoomOverlay .zoom-inner {
+      background: rgba(5, 8, 14, .6);
+      border: 1px solid rgba(255,255,255,.2);
+      padding: 12px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.45);
+    }
+    #zoomOverlay svg {
+      width: 380px;
+      height: 380px;
+      border-radius: 10px;
+      display: block;
+      background: #0a0f18;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WILLMAP</h1>
+    <p>Tree map of selected genomes across generations and iterations. Import a trace JSON or load from the PRNG demo storage.</p>
+  </header>
+
+  <div class="controls">
+    <button id="loadStorage">Load From PRNG Storage</button>
+    <button id="importBtn">Import Trace JSON</button>
+    <input id="fileInput" type="file" accept="application/json" hidden>
+    <div class="field"><label>σ</label><input id="sigma" type="number" min="0" max="1" step="0.01" value="0.12" disabled></div>
+    <div class="field"><label>Struct</label><input id="struct" type="number" min="0" max="1" step="0.01" value="0.12" disabled></div>
+    <button id="rebuild" disabled>Rebuild</button>
+  </div>
+
+  <div id="mapWrap">
+    <svg id="edges"></svg>
+    <div id="nodes"></div>
+    <div id="empty" class="empty">Import a trace to build the map.</div>
+  </div>
+  <div id="zoomOverlay">
+    <div class="zoom-inner"></div>
+  </div>
+
+<script>
+(() => {
+  const STORAGE_KEY = "evo_color_grid_demo_option5_cell_duplicate_prng_prf";
+  const NODE_W = 64;
+  const NODE_H = 78;
+  const X_GAP = 2;
+  const Y_GAP = 12;
+  const MAX_GRID_N = 256;
+
+  const mapWrap = document.getElementById("mapWrap");
+  const nodesEl = document.getElementById("nodes");
+  const edgesEl = document.getElementById("edges");
+  const emptyEl = document.getElementById("empty");
+  const loadStorageBtn = document.getElementById("loadStorage");
+  const importBtn = document.getElementById("importBtn");
+  const fileInput = document.getElementById("fileInput");
+  const sigmaInput = document.getElementById("sigma");
+  const structInput = document.getElementById("struct");
+  const rebuildBtn = document.getElementById("rebuild");
+  const zoomOverlay = document.getElementById("zoomOverlay");
+  const zoomInner = zoomOverlay.querySelector(".zoom-inner");
+
+  let traceGroups = [];
+  let settings = { sigma: 0.12, structProb: 0.12, cellStroke: 0 };
+
+  function clamp01(x){ return Math.min(1, Math.max(0, x)); }
+  function wrap01(x){ x = x % 1; return (x < 0) ? x + 1 : x; }
+
+  function hashString32(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+  }
+
+  function mix32(x) {
+    x = (x + 0x9e3779b9) >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+    return (x ^ (x >>> 16)) >>> 0;
+  }
+
+  function prfUint(ctx, label, a = 0, b = 0, c = 0, d = 0) {
+    let x = (ctx.seed ^ hashString32(label)) >>> 0;
+    x = (x + Math.imul(ctx.gen | 0, 0x9e3779b1)) >>> 0;
+    x = (x + Math.imul(ctx.iter | 0, 0x85ebca6b)) >>> 0;
+    x = (x + Math.imul(ctx.cand | 0, 0xc2b2ae35)) >>> 0;
+    x = (x + Math.imul(a | 0, 0x27d4eb2f)) >>> 0;
+    x = (x + Math.imul(b | 0, 0x165667b1)) >>> 0;
+    x = (x + Math.imul(c | 0, 0xd3a2646c)) >>> 0;
+    x = (x + Math.imul(d | 0, 0xfd7046c5)) >>> 0;
+    return mix32(x);
+  }
+
+  function prfFloat(ctx, label, a = 0, b = 0, c = 0, d = 0) {
+    return prfUint(ctx, label, a, b, c, d) / 4294967296;
+  }
+
+  function prfInt(ctx, label, n, a = 0, b = 0, c = 0, d = 0) {
+    return Math.floor(prfFloat(ctx, label, a, b, c, d) * n);
+  }
+
+  function parseHexColor(text) {
+    const t = String(text || "").trim();
+    const m = /^#?([0-9a-f]{6})$/i.exec(t);
+    if (!m) return null;
+    const hex = m[1];
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+
+  function seedFromColor(rgb) {
+    return ((rgb.r << 16) | (rgb.g << 8) | rgb.b) >>> 0;
+  }
+
+  function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      switch (max) {
+        case r: h = ((g - b) / d) % 6; break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+      if (h < 0) h += 1;
+    }
+    return {h, s, l};
+  }
+
+  function initialColorToGenome(gridN, hsl) {
+    const g = new Float32Array(genomeLength(gridN));
+    g[0] = wrap01(hsl.h);
+    g[1] = clamp01(hsl.s);
+    g[2] = clamp01(hsl.l);
+    const sRaw = clamp01((hsl.s - 0.30) / 0.70);
+    const lRaw = clamp01((hsl.l - 0.05) / 0.90);
+    let idx = 3;
+    for (let i = 0; i < gridN * gridN; i++) {
+      g[idx++] = wrap01(hsl.h);
+      g[idx++] = sRaw;
+      g[idx++] = lRaw;
+    }
+    return g;
+  }
+
+  function genomeLength(gridN) { return 3 + (gridN * gridN * 3); }
+
+  function mutateGenome(parent, ctx, sigma, gridN, structProb) {
+    const g = new Float32Array(parent.length);
+
+    g[0] = 0;
+    g[1] = 0;
+    g[2] = 0;
+
+    const pCell = Math.min(0.95, Math.max(0.06, 0.18 + sigma * 1.3));
+    let idx = 3;
+    for (let cell = 0; cell < gridN*gridN; cell++) {
+      const baseH = parent[idx];
+      const baseS = parent[idx+1];
+      const baseL = parent[idx+2];
+
+      if (prfFloat(ctx, "mutate-gate", cell) < pCell) {
+        const dh = (prfFloat(ctx, "mutate-dh", cell) * 2 - 1) * sigma * 0.45;
+        const ds = (prfFloat(ctx, "mutate-ds", cell) * 2 - 1) * sigma * 0.35;
+        const dl = (prfFloat(ctx, "mutate-dl", cell) * 2 - 1) * sigma * 0.35;
+
+        g[idx]   = wrap01(baseH + dh);
+        g[idx+1] = clamp01(baseS + ds);
+        g[idx+2] = clamp01(baseL + dl);
+      } else {
+        g[idx]   = baseH;
+        g[idx+1] = baseS;
+        g[idx+2] = baseL;
+      }
+      idx += 3;
+    }
+
+    if (prfFloat(ctx, "struct-gate") < structProb) {
+      const op = prfFloat(ctx, "struct-op");
+      if (op < 0.5) {
+        if (prfFloat(ctx, "struct-axis") < 0.5) {
+          const row = prfInt(ctx, "struct-row", gridN);
+          const dir = (prfFloat(ctx, "struct-dir") < 0.5) ? -1 : 1;
+          const rowStart = 3 + row * gridN * 3;
+          const copy = new Float32Array(gridN * 3);
+          copy.set(g.subarray(rowStart, rowStart + gridN*3));
+          for (let x=0; x<gridN; x++) {
+            const nx = (x + dir + gridN) % gridN;
+            g[rowStart + nx*3 + 0] = copy[x*3 + 0];
+            g[rowStart + nx*3 + 1] = copy[x*3 + 1];
+            g[rowStart + nx*3 + 2] = copy[x*3 + 2];
+          }
+        } else {
+          const col = prfInt(ctx, "struct-col", gridN);
+          const dir = (prfFloat(ctx, "struct-dir") < 0.5) ? -1 : 1;
+          const copy = new Float32Array(gridN * 3);
+          for (let y=0; y<gridN; y++) {
+            const idx = 3 + (y * gridN + col) * 3;
+            copy[y*3 + 0] = g[idx + 0];
+            copy[y*3 + 1] = g[idx + 1];
+            copy[y*3 + 2] = g[idx + 2];
+          }
+          for (let y=0; y<gridN; y++) {
+            const ny = (y + dir + gridN) % gridN;
+            const dst = 3 + (ny * gridN + col) * 3;
+            g[dst + 0] = copy[y*3 + 0];
+            g[dst + 1] = copy[y*3 + 1];
+            g[dst + 2] = copy[y*3 + 2];
+          }
+        }
+      } else if (op < 0.75) {
+        const a = prfInt(ctx, "struct-swap-a", gridN*gridN);
+        const b = prfInt(ctx, "struct-swap-b", gridN*gridN);
+        const iA = 3 + a * 3;
+        const iB = 3 + b * 3;
+        for (let k=0; k<3; k++) {
+          const tmp = g[iA + k];
+          g[iA + k] = g[iB + k];
+          g[iB + k] = tmp;
+        }
+      } else {
+        const src = prfInt(ctx, "struct-dup-src", gridN*gridN);
+        const dst = prfInt(ctx, "struct-dup-dst", gridN*gridN);
+        if (src !== dst) {
+          const iSrc = 3 + src * 3;
+          const iDst = 3 + dst * 3;
+          g[iDst + 0] = g[iSrc + 0];
+          g[iDst + 1] = g[iSrc + 1];
+          g[iDst + 2] = g[iSrc + 2];
+        }
+      }
+    }
+
+    return g;
+  }
+
+  function resampleGenome(parent, oldN, newN) {
+    if (newN === oldN * 2) {
+      const out = new Float32Array(genomeLength(newN));
+      out[0] = parent[0];
+      out[1] = parent[1];
+      out[2] = parent[2];
+
+      let outIdx = 3;
+      for (let y = 0; y < newN; y++) {
+        const yOld = Math.floor(y / 2);
+        for (let x = 0; x < newN; x++) {
+          const xOld = Math.floor(x / 2);
+          const src = 3 + (yOld * oldN + xOld) * 3;
+          out[outIdx++] = parent[src];
+          out[outIdx++] = parent[src + 1];
+          out[outIdx++] = parent[src + 2];
+        }
+      }
+      return out;
+    }
+
+    const out = new Float32Array(genomeLength(newN));
+    out[0] = parent[0];
+    out[1] = parent[1];
+    out[2] = parent[2];
+
+    const denomNew = (newN > 1) ? (newN - 1) : 1;
+    const oldMax = oldN - 1;
+
+    let outIdx = 3;
+    for (let y = 0; y < newN; y++) {
+      const v = (newN > 1) ? (y / denomNew) : 0;
+      const yOld = v * oldMax;
+      const y0 = Math.floor(yOld);
+      const y1 = Math.min(oldMax, y0 + 1);
+      const ty = yOld - y0;
+
+      for (let x = 0; x < newN; x++) {
+        const u = (newN > 1) ? (x / denomNew) : 0;
+        const xOld = u * oldMax;
+        const x0 = Math.floor(xOld);
+        const x1 = Math.min(oldMax, x0 + 1);
+        const tx = xOld - x0;
+
+        const w00 = (1 - tx) * (1 - ty);
+        const w10 = tx * (1 - ty);
+        const w01 = (1 - tx) * ty;
+        const w11 = tx * ty;
+
+        const i00 = 3 + (y0 * oldN + x0) * 3;
+        const i10 = 3 + (y0 * oldN + x1) * 3;
+        const i01 = 3 + (y1 * oldN + x0) * 3;
+        const i11 = 3 + (y1 * oldN + x1) * 3;
+
+        const a00 = 2 * Math.PI * wrap01(parent[i00]);
+        const a10 = 2 * Math.PI * wrap01(parent[i10]);
+        const a01 = 2 * Math.PI * wrap01(parent[i01]);
+        const a11 = 2 * Math.PI * wrap01(parent[i11]);
+
+        const c =
+          Math.cos(a00) * w00 + Math.cos(a10) * w10 +
+          Math.cos(a01) * w01 + Math.cos(a11) * w11;
+
+        const s =
+          Math.sin(a00) * w00 + Math.sin(a10) * w10 +
+          Math.sin(a01) * w01 + Math.sin(a11) * w11;
+
+        let h;
+        const r2 = c*c + s*s;
+        if (r2 < 1e-10) {
+          h = parent[i00];
+        } else {
+          let ang = Math.atan2(s, c);
+          if (ang < 0) ang += 2 * Math.PI;
+          h = ang / (2 * Math.PI);
+        }
+
+        const sat =
+          parent[i00 + 1] * w00 + parent[i10 + 1] * w10 +
+          parent[i01 + 1] * w01 + parent[i11 + 1] * w11;
+
+        const lig =
+          parent[i00 + 2] * w00 + parent[i10 + 2] * w10 +
+          parent[i01 + 2] * w01 + parent[i11 + 2] * w11;
+
+        out[outIdx++] = wrap01(h);
+        out[outIdx++] = clamp01(sat);
+        out[outIdx++] = clamp01(lig);
+      }
+    }
+    return out;
+  }
+
+  function hslToRgba(h, s, l, a) {
+    h = wrap01(h);
+    const H = h * 360;
+    const S = s * 100;
+    const L = l * 100;
+    return `hsla(${H.toFixed(1)}, ${S.toFixed(1)}%, ${L.toFixed(1)}%, ${a.toFixed(3)})`;
+  }
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  let svgIdCounter = 0;
+
+  function setupSvg(svg, viewBoxSize=220) {
+    svg._size = viewBoxSize;
+    svg.setAttribute("viewBox", `0 0 ${viewBoxSize} ${viewBoxSize}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("shape-rendering", "crispEdges");
+    if (!svg._vignetteId) svg._vignetteId = `vignette-${++svgIdCounter}`;
+    return svg;
+  }
+
+  function renderGenomeToSvg(svg, genome, gridN) {
+    if (!svg._size) setupSvg(svg, 220);
+    const W = svg._size || 220;
+    const gap = 0;
+    const cell = W / gridN;
+    const inset = gap * 0.5;
+    const strokeWidth = (settings.cellStroke || 0) * cell;
+    const strokeAttr = (settings.cellStroke && settings.cellStroke > 0)
+      ? ` stroke="#000" stroke-width="${strokeWidth}"`
+      : "";
+    const vignetteId = svg._vignetteId || `vignette-${++svgIdCounter}`;
+    svg._vignetteId = vignetteId;
+
+    const parts = [];
+    parts.push(
+      `<defs><radialGradient id="${vignetteId}" cx="50%" cy="50%" r="80%">` +
+      `<stop offset="0%" stop-color="black" stop-opacity="0"/>` +
+      `<stop offset="100%" stop-color="black" stop-opacity="0.28"/>` +
+      `</radialGradient></defs>`
+    );
+
+    parts.push(`<rect width="${W}" height="${W}" fill="${hslToRgba(genome[0], genome[1], genome[2], 1.0)}"></rect>`);
+
+    let idx = 3;
+    for (let y=0; y<gridN; y++) {
+      for (let x=0; x<gridN; x++) {
+        const h = genome[idx++], sRaw = genome[idx++], lRaw = genome[idx++];
+        const s = 0.30 + 0.70 * sRaw;
+        const l = 0.05 + 0.90 * lRaw;
+        const px = x * cell + inset;
+        const py = y * cell + inset;
+        const size = cell - gap;
+        parts.push(`<rect x="${px}" y="${py}" width="${size}" height="${size}" fill="${hslToRgba(h, s, l, 1.0)}"${strokeAttr}></rect>`);
+      }
+    }
+
+    parts.push(`<rect width="${W}" height="${W}" fill="url(#${vignetteId})"></rect>`);
+    parts.push(`<rect x="0.5" y="0.5" width="${W-1}" height="${W-1}" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="1"></rect>`);
+
+    svg.innerHTML = parts.join("");
+  }
+
+  function normalizeTraceGroup(group) {
+    const initColor = String(group && group.initColor ? group.initColor : "").trim();
+    const rawRows = Array.isArray(group && group.rows) ? group.rows : [];
+    const rows = rawRows.map((r) => ({
+      gen: String((r && r.gen !== undefined) ? r.gen : ""),
+      iter: String((r && r.iter !== undefined) ? r.iter : ""),
+      pick: String((r && r.pick !== undefined) ? r.pick : ""),
+    }));
+    return {initColor, rows};
+  }
+
+  function loadTracePayload(payload) {
+    if (!payload || typeof payload !== "object") return false;
+    if (payload.settings) {
+      settings.sigma = Number.isFinite(payload.settings.sigma) ? payload.settings.sigma : settings.sigma;
+      settings.structProb = Number.isFinite(payload.settings.structProb) ? payload.settings.structProb : settings.structProb;
+      settings.cellStroke = Number.isFinite(payload.settings.cellStroke) ? payload.settings.cellStroke : settings.cellStroke;
+      sigmaInput.value = settings.sigma;
+      structInput.value = settings.structProb;
+    }
+    if (Array.isArray(payload.groups)) {
+      traceGroups = payload.groups.map(normalizeTraceGroup).filter(g => g.initColor);
+      return traceGroups.length > 0;
+    }
+    if (payload.initColor || payload.rows) {
+      traceGroups = [normalizeTraceGroup(payload)];
+      return true;
+    }
+    return false;
+  }
+
+  function loadFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        settings.sigma = Number.isFinite(obj.sigma) ? obj.sigma : settings.sigma;
+        settings.structProb = Number.isFinite(obj.structProb) ? obj.structProb : settings.structProb;
+        settings.cellStroke = Number.isFinite(obj.cellStroke) ? obj.cellStroke : settings.cellStroke;
+        sigmaInput.value = settings.sigma;
+        structInput.value = settings.structProb;
+        traceGroups = Array.isArray(obj.traceGroups) ? obj.traceGroups.map(normalizeTraceGroup) : [];
+        buildMap();
+        return;
+      }
+      requestTraceFromDemo();
+    } catch (e) {
+      requestTraceFromDemo();
+    }
+  }
+
+  let demoWindow = null;
+  let demoRequestTimer = null;
+
+  function requestTraceFromDemo() {
+    const demoUrl = location.href.replace(/[^/]+$/, "demo_grid_buy_2^n_prng.html");
+    demoWindow = window.open(demoUrl, "prng_demo");
+    if (!demoWindow) {
+      alert("Open the PRNG demo and try again.");
+      return;
+    }
+    if (demoRequestTimer) clearInterval(demoRequestTimer);
+    demoWindow.postMessage({type: "REQUEST_PRNG_TRACE"}, "*");
+    demoRequestTimer = setInterval(() => {
+      try { demoWindow.postMessage({type: "REQUEST_PRNG_TRACE"}, "*"); } catch (e) {}
+    }, 400);
+    setTimeout(() => {
+      if (demoRequestTimer) clearInterval(demoRequestTimer);
+      demoRequestTimer = null;
+    }, 4000);
+  }
+
+  window.addEventListener("message", (e) => {
+    const data = e.data;
+    if (!data || data.type !== "PRNG_TRACE") return;
+    if (demoRequestTimer) clearInterval(demoRequestTimer);
+    demoRequestTimer = null;
+    const payload = data.payload;
+    if (!payload) return;
+    const ok = loadTracePayload(payload);
+    if (!ok) {
+      alert("Failed to load trace from demo.");
+      return;
+    }
+    buildMap();
+  });
+
+  function parseGen(value) {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(Math.floor(Math.log2(MAX_GRID_N)), n));
+  }
+
+  function parseIter(value) {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, n);
+  }
+
+  function parsePick(value) {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n)) return null;
+    return n >= 1 ? n : null;
+  }
+
+  function buildTreeFromGroups(groups) {
+    const nodes = [];
+    const nodeByKey = new Map();
+    const roots = [];
+    let nodeId = 1;
+
+    function getOrCreateNode(parent, key, createNodeFn) {
+      const mapKey = `${parent ? parent.id : "root"}|${key}`;
+      if (nodeByKey.has(mapKey)) return nodeByKey.get(mapKey);
+      const node = createNodeFn();
+      node.id = nodeId++;
+      node.parent = parent;
+      node.children = [];
+      if (parent) parent.children.push(node);
+      nodes.push(node);
+      nodeByKey.set(mapKey, node);
+      return node;
+    }
+
+    for (const group of groups) {
+      const initRgb = parseHexColor(group.initColor);
+      if (!initRgb) continue;
+      const rootSeed = seedFromColor(initRgb);
+      const rootGen = 0;
+      const rootIter = 0;
+      const rootGridN = 1;
+      const rootGenome = initialColorToGenome(rootGridN, rgbToHsl(initRgb.r, initRgb.g, initRgb.b));
+      const rootKey = `root:${group.initColor}`;
+
+      const root = getOrCreateNode(null, rootKey, () => ({
+        type: "root",
+        label: "Start",
+        gen: rootGen,
+        iter: rootIter,
+        gridN: rootGridN,
+        genome: rootGenome,
+      }));
+
+      if (!roots.includes(root)) roots.push(root);
+
+      let parentNode = root;
+      let parentGenome = rootGenome;
+      let currentGen = rootGen;
+      let currentGridN = rootGridN;
+      let currentIter = rootIter + 1;
+
+      const rows = group.rows || [];
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const rowGen = parseGen(row.gen);
+        const rowIter = parseIter(row.iter);
+        const rowPick = parsePick(row.pick);
+        const pickLabel = String(row.pick || "").trim().toLowerCase();
+        const isGenesis = pickLabel === "genesis";
+        const isSold = pickLabel === "sold";
+        const isBlank = pickLabel === "";
+        let nextGen = (rowGen === null) ? currentGen : rowGen;
+        let nextIter = (rowIter === null) ? 0 : rowIter;
+        if (rowIter !== null && (rowPick || isBlank || isSold) && !isGenesis) currentIter = rowIter;
+
+        if (nextGen !== currentGen) {
+          const newN = Math.max(1, Math.pow(2, nextGen));
+          const resampled = resampleGenome(parentGenome, currentGridN, newN);
+          if (!rowPick) {
+            const key = `buy:g${nextGen}:i${nextIter}`;
+            parentNode = getOrCreateNode(parentNode, key, () => ({
+              type: "buy",
+              label: "Buy",
+              gen: nextGen,
+              iter: nextIter,
+              gridN: newN,
+              genome: resampled,
+            }));
+            parentGenome = parentNode.genome;
+            currentGen = nextGen;
+            currentGridN = newN;
+            currentIter = nextIter;
+            continue;
+          }
+          parentGenome = resampled;
+          currentGen = nextGen;
+          currentGridN = newN;
+          currentIter = nextIter;
+        }
+
+        if (rowPick) {
+          const hasNextRow = (idx < rows.length - 1);
+          if (!hasNextRow) continue;
+          const targetIter = (rowIter === null) ? currentIter : rowIter;
+          const ctx = { seed: rootSeed >>> 0, gen: currentGen, iter: targetIter >>> 0, cand: rowPick >>> 0 };
+          const mutantGenome = mutateGenome(parentGenome, ctx, settings.sigma, currentGridN, settings.structProb);
+          const key = `pick:g${currentGen}:i${targetIter}:p${rowPick}`;
+          parentNode = getOrCreateNode(parentNode, key, () => ({
+            type: "pick",
+            label: `Pick ${rowPick}`,
+            gen: currentGen,
+            iter: targetIter,
+            gridN: currentGridN,
+            genome: mutantGenome,
+          }));
+          parentGenome = parentNode.genome;
+          currentIter = targetIter + 1;
+        }
+      }
+    }
+
+    return {nodes, roots};
+  }
+
+  function layoutTree(root, xOffset) {
+    let leafIndex = 0;
+
+    function dfs(node, depth) {
+      node.depth = depth;
+      if (!node.children.length) {
+        node.x = xOffset + leafIndex * (NODE_W + X_GAP);
+        leafIndex += 1;
+      } else {
+        node.children.forEach(child => dfs(child, depth + 1));
+        const avg = node.children.reduce((sum, c) => sum + c.x, 0) / node.children.length;
+        node.x = avg;
+      }
+      node.y = depth * (NODE_H + Y_GAP);
+    }
+
+    dfs(root, 0);
+    const width = Math.max(1, leafIndex) * (NODE_W + X_GAP);
+    return {width};
+  }
+
+  function renderMap() {
+    nodesEl.innerHTML = "";
+    edgesEl.innerHTML = "";
+    emptyEl.style.display = traceGroups.length ? "none" : "block";
+
+    if (!traceGroups.length) {
+      edgesEl.setAttribute("width", "0");
+      edgesEl.setAttribute("height", "0");
+      return;
+    }
+
+    const {nodes, roots} = buildTreeFromGroups(traceGroups);
+    if (!nodes.length) {
+      emptyEl.style.display = "block";
+      return;
+    }
+
+    let xOffset = 20;
+    let maxX = 0;
+    let maxY = 0;
+
+    roots.forEach((root) => {
+      const {width} = layoutTree(root, xOffset);
+      xOffset += width + X_GAP * 2;
+    });
+
+    nodes.forEach((node) => {
+      maxX = Math.max(maxX, node.x + NODE_W + 20);
+      maxY = Math.max(maxY, node.y + NODE_H + 20);
+    });
+
+    nodesEl.style.width = `${maxX}px`;
+    nodesEl.style.height = `${maxY}px`;
+    edgesEl.setAttribute("width", String(maxX));
+    edgesEl.setAttribute("height", String(maxY));
+    edgesEl.setAttribute("viewBox", `0 0 ${maxX} ${maxY}`);
+
+    const edgeParts = [];
+    nodes.forEach((node) => {
+      if (!node.parent) return;
+      const x1 = node.parent.x + NODE_W / 2;
+      const y1 = node.parent.y + NODE_H;
+      const x2 = node.x + NODE_W / 2;
+      const y2 = node.y;
+      const c1 = y1 + 40;
+      const c2 = y2 - 40;
+      edgeParts.push(`<path d="M ${x1} ${y1} C ${x1} ${c1}, ${x2} ${c2}, ${x2} ${y2}" stroke="rgba(122,162,255,.35)" stroke-width="1.5" fill="none" />`);
+    });
+    edgesEl.innerHTML = edgeParts.join("");
+
+    nodes.forEach((node) => {
+      const el = document.createElement("div");
+      el.className = "node";
+      el.style.left = `${node.x}px`;
+      el.style.top = `${node.y}px`;
+
+      const svg = document.createElementNS(SVG_NS, "svg");
+      setupSvg(svg, 220);
+      renderGenomeToSvg(svg, node.genome, node.gridN);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML = `<span>G ${node.gen}</span><span>I ${node.iter}</span>`;
+
+      el.appendChild(svg);
+      el.appendChild(meta);
+      nodesEl.appendChild(el);
+
+      el.addEventListener("mouseenter", () => {
+        zoomInner.innerHTML = "";
+        const clone = svg.cloneNode(true);
+        clone.removeAttribute("style");
+        zoomInner.appendChild(clone);
+        zoomOverlay.classList.add("active");
+      });
+      el.addEventListener("mouseleave", () => {
+        zoomOverlay.classList.remove("active");
+        zoomInner.innerHTML = "";
+      });
+    });
+  }
+
+  function buildMap() {
+    renderMap();
+  }
+
+  loadStorageBtn.addEventListener("click", loadFromStorage);
+  importBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(String(reader.result || ""));
+        const ok = loadTracePayload(payload);
+        if (!ok) {
+          alert("Invalid trace file.");
+          return;
+        }
+        buildMap();
+      } catch (e) {
+        alert("Invalid trace file.");
+      }
+    };
+    reader.readAsText(file);
+  });
+  // rebuildBtn remains disabled to keep settings tied to the trace
+})();
+</script>
+</body>
+</html>
