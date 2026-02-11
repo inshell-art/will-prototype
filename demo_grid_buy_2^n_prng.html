@@ -95,6 +95,12 @@
     .tile:hover { transform: translateY(-2px); border-color: rgba(122,162,255,.5); }
     .tile.blank { cursor: default; }
     .tile.blank:hover { transform: none; border-color: var(--border); }
+    .tile .gip {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .2px;
+    }
     .trace-panel label {
       font-size: 13px;
       color: var(--muted);
@@ -975,8 +981,72 @@
     }
   }
 
+  function formatGip(gen, iter, pick) {
+    return `G${gen} I${iter} P${pick}`;
+  }
+
+  function computeTraceLabels() {
+    const group = traceGroups[activeGroupIndex] || {rows: defaultTraceRows()};
+    const rows = Array.isArray(group.rows) ? group.rows : defaultTraceRows();
+    let currentGen = 0;
+    let currentIter = 1;
+    let currentLabel = {gen: 0, iter: 0, pick: "Genesis"};
+
+    for (let idx = 0; idx < rows.length; idx++) {
+      const row = rows[idx] || {};
+      const genRaw = parseInt(row.gen, 10);
+      if (Number.isFinite(genRaw) && genRaw !== currentGen) {
+        currentGen = Math.max(0, genRaw);
+        currentIter = 0;
+        currentLabel = {gen: currentGen, iter: 0, pick: "Sold"};
+      }
+
+      const iterRaw = parseInt(row.iter, 10);
+      const rowIter = Number.isFinite(iterRaw) ? Math.max(0, iterRaw) : null;
+      const pickText = String(row.pick || "").trim();
+      const pickLower = pickText.toLowerCase();
+
+      if (pickLower === "genesis") {
+        currentGen = 0;
+        currentIter = 1;
+        currentLabel = {gen: 0, iter: 0, pick: "Genesis"};
+        continue;
+      }
+      if (pickLower === "sold") {
+        currentLabel = {gen: currentGen, iter: 0, pick: "Sold"};
+        currentIter = 0;
+        continue;
+      }
+      if (pickText === "") {
+        if (rowIter !== null) currentIter = rowIter;
+        continue;
+      }
+
+      const pickNum = parseInt(pickText, 10);
+      if (!Number.isFinite(pickNum) || pickNum < 1) {
+        continue;
+      }
+
+      const hasNextRow = (idx < rows.length - 1);
+      if (!hasNextRow) {
+        if (rowIter !== null) currentIter = rowIter;
+        continue;
+      }
+
+      const targetIter = rowIter !== null ? rowIter : currentIter;
+      currentLabel = {gen: currentGen, iter: targetIter, pick: String(pickNum)};
+      currentIter = targetIter + 1;
+    }
+
+    return {
+      current: currentLabel,
+      waiting: {gen: currentGen, iter: currentIter},
+    };
+  }
+
   function buildGrid(blank = false) {
     gridEl.innerHTML = "";
+    const labels = computeTraceLabels();
     for (let i=0; i<TILE_COUNT; i++) {
       const tile = document.createElement("div");
       tile.className = blank ? "tile blank" : "tile";
@@ -997,6 +1067,19 @@
         badge.textContent = `Mutant (${candidateIndex})`;
       }
       tile.appendChild(badge);
+
+      const gip = document.createElement("div");
+      gip.className = "gip";
+      if (i === PARENT_INDEX) {
+        const c = labels.current;
+        gip.textContent = formatGip(c.gen, c.iter, c.pick);
+      } else {
+        const mutantNumber = (i < PARENT_INDEX) ? (i + 1) : i;
+        const candidateIndex = candidateOffset + mutantNumber;
+        const w = labels.waiting;
+        gip.textContent = formatGip(w.gen, w.iter, candidateIndex);
+      }
+      tile.appendChild(gip);
 
       const svg = document.createElementNS(SVG_NS, "svg");
       setupSvg(svg, 220);
