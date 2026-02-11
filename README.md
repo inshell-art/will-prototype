@@ -53,6 +53,54 @@ At any moment on the demo page:
 - **Mutant tiles** are generated from that parent using the **current waiting row’s** `(G, I)` and the **candidate index** `P`.
   - PRF context for a mutant is: `seed + G + I + candidate + label`.
 
+### 3×3 Tile Map (All Situations)
+
+Tile layout (mutant indices are fixed by position):
+
+```
+M1  M2  M3
+M4   C  M5
+M6  M7  M8
+```
+
+Where:
+
+- `C` = Current (last applied row).
+- `M1..M8` = mutants generated from the current waiting row.
+- `P` in a mutant is the **candidate index** (starts at 1 and can jump by 8 when staying on parent).
+
+**Situation A — Genesis (start):**
+
+```
+M1..M8 = (G0, I1, P=1..8)
+C      = (G0, I0, P=Genesis)
+```
+
+**Situation B — Normal pick applied:**
+
+If the last applied row is `(Gg, Ii, Pp)`, then:
+
+```
+C      = (Gg, Ii, Pp)
+M1..M8 = (Gg, I(i+1), P=1..8)   // new waiting row
+```
+
+**Situation C — Buy (new generation parent):**
+
+```
+C      = (G(g+1), I0, P=Sold)
+M1..M8 = (G(g+1), I1, P=1..8)
+```
+
+**Situation D — Stay on parent (press Will with center selected):**
+
+Current does not change, iteration does not change, but candidate indices advance:
+
+```
+C      = (Gg, Ii, Pp)         // unchanged
+M1..M8 = (Gg, Ii, P=9..16)    // then 17..24, etc.
+```
+
 ## Trace JSON Format
 
 Exported JSON looks like:
